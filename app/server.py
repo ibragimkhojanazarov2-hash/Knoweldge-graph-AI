@@ -150,6 +150,15 @@ def get_book(book_id: str) -> dict | None:
     return result
 
 
+def get_chapter(book_id: str, idx: int) -> dict | None:
+    with connect() as db:
+        row = db.execute(
+            "SELECT idx, title, text FROM chapters WHERE book_id = ? AND idx = ?",
+            (book_id, idx),
+        ).fetchone()
+    return dict(row) if row else None
+
+
 def strip_prefix(path: str) -> str:
     """Убирает /proxy/8000 из пути: страница живёт под этим префиксом."""
     parts = path.split("/")
@@ -173,11 +182,23 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if path.startswith("/api/books/"):
-            book = get_book(path.rsplit("/", 1)[-1])
-            if book is None:
-                self.send_error_text(404, "Книга не найдена.")
+            rest = path[len("/api/books/"):].rstrip("/")
+            parts = rest.split("/")
+            if len(parts) == 3 and parts[1] == "chapters" and parts[2].isdigit():
+                chapter = get_chapter(parts[0], int(parts[2]))
+                if chapter is None:
+                    self.send_error_text(404, "Глава не найдена.")
+                    return
+                self.send_json(chapter)
                 return
-            self.send_json(book)
+            if len(parts) == 1 and parts[0]:
+                book = get_book(parts[0])
+                if book is None:
+                    self.send_error_text(404, "Книга не найдена.")
+                    return
+                self.send_json(book)
+                return
+            self.send_error_text(404, "Нет такой страницы.")
             return
 
         if path.startswith("/covers/"):

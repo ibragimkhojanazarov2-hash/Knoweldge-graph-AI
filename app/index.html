@@ -147,10 +147,21 @@
   .fact b { display: block; font-family: var(--serif); font-size: 22px; font-weight: 400; }
   .fact span { color: var(--ink-muted); font-size: 13px; }
   .chapters { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
-  .chapters li { display: flex; align-items: baseline; gap: 16px; padding: 14px 4px; border-bottom: 1px solid var(--line); }
+  .chapter-row {
+    display: flex; align-items: baseline; gap: 16px;
+    width: 100%; padding: 14px 4px;
+    border: 0; border-bottom: 1px solid var(--line);
+    background: none; color: inherit; font: inherit; text-align: left; cursor: pointer;
+  }
+  .chapter-row:hover .name { color: var(--accent); }
   .chapters .num { flex: 0 0 34px; color: var(--ink-muted); font-size: 13px; font-variant-numeric: tabular-nums; }
   .chapters .name { flex: 1; font-family: var(--serif); font-size: 19px; }
   .chapters .size { color: var(--ink-muted); font-size: 12px; white-space: nowrap; }
+  .reader { max-width: 660px; }
+  .reader h1 { font-size: 34px; margin: 0 0 6px; }
+  .reader-meta { color: var(--ink-muted); font-size: 13px; margin-bottom: 30px; }
+  .reader-text { font-family: var(--serif); font-size: 19px; line-height: 1.7; }
+  .reader-text p { margin: 0 0 1.1em; }
   .section-title { font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-muted); margin: 0 0 6px; }
   @media (max-width: 720px) {
     .top { padding: 12px 18px; }
@@ -294,9 +305,11 @@
 
     const chapters = book.chapters.map((chapter) => `
       <li>
-        <span class="num">${String(chapter.idx).padStart(2, "0")}</span>
-        <span class="name">${esc(chapter.title)}</span>
-        <span class="size">${number(chapter.chars)} зн.</span>
+        <button class="chapter-row" type="button" data-chapter="${chapter.idx}">
+          <span class="num">${String(chapter.idx).padStart(2, "0")}</span>
+          <span class="name">${esc(chapter.title)}</span>
+          <span class="size">${number(chapter.chars)} зн.</span>
+        </button>
       </li>`).join("");
 
     app.innerHTML = `
@@ -317,9 +330,47 @@
       <ol class="chapters">${chapters}</ol>`;
 
     document.getElementById("backBtn").addEventListener("click", () => { location.hash = ""; });
+    app.querySelectorAll("[data-chapter]").forEach((row) => {
+      row.addEventListener("click", () => {
+        location.hash = "/book/" + id + "/chapter/" + row.dataset.chapter;
+      });
+    });
+  }
+
+  async function showChapter(id, idx) {
+    const back = () => { location.hash = "/book/" + id; };
+    app.innerHTML = `<button class="back" type="button" id="backBtn">← К списку глав</button><p class="hint">Открываю главу…</p>`;
+    document.getElementById("backBtn").addEventListener("click", back);
+
+    let chapter;
+    try {
+      chapter = await api("api/books/" + encodeURIComponent(id) + "/chapters/" + idx);
+    } catch (error) {
+      app.innerHTML = `<button class="back" type="button" id="backBtn">← К списку глав</button>
+        <p class="note error">${esc(error.message)}</p>`;
+      document.getElementById("backBtn").addEventListener("click", back);
+      return;
+    }
+
+    const paragraphs = chapter.text.split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => `<p>${esc(line)}</p>`)
+      .join("");
+
+    app.innerHTML = `
+      <button class="back" type="button" id="backBtn">← К списку глав</button>
+      <article class="reader">
+        <h1>${esc(chapter.title)}</h1>
+        <div class="reader-meta">Глава ${String(chapter.idx).padStart(2, "0")} · ${number(chapter.text.length)} знаков</div>
+        <div class="reader-text">${paragraphs}</div>
+      </article>`;
+    document.getElementById("backBtn").addEventListener("click", back);
   }
 
   function route() {
+    const chapter = location.hash.match(/^#\/book\/([^/]+)\/chapter\/(\d+)$/);
+    if (chapter) { showChapter(decodeURIComponent(chapter[1]), chapter[2]); return; }
     const match = location.hash.match(/^#\/book\/(.+)$/);
     if (match) showBook(decodeURIComponent(match[1]));
     else showLibrary();
