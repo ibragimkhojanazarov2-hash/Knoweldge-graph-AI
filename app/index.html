@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Marginalia — библиотека</title>
+<style>
+  :root {
+    --bg: #F7F3EC;
+    --surface: #FFFDF9;
+    --ink: #1F1B16;
+    --ink-muted: #6B6358;
+    --line: #E4DCCC;
+    --accent: #B4532A;
+    --book-a: #8C6239;
+    --book-b: #4F6B72;
+    --shadow: 0 18px 40px -24px rgba(60, 45, 25, .45);
+    --serif: "Times New Roman", Times, "Tinos", "Liberation Serif", serif;
+    --sans: "Manrope", -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  }
+  html[data-theme="dark"] {
+    --bg: #13110E;
+    --surface: #1C1915;
+    --ink: #EFE7DA;
+    --ink-muted: #A79C8B;
+    --line: #322C24;
+    --accent: #D07A4E;
+    --book-a: #B08155;
+    --book-b: #6E8F97;
+    --shadow: 0 18px 40px -24px rgba(0, 0, 0, .7);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    line-height: 1.5;
+    transition: background .25s, color .25s;
+  }
+  .top {
+    position: sticky; top: 0; z-index: 10;
+    display: flex; align-items: center; gap: 24px;
+    padding: 14px 32px;
+    background: color-mix(in srgb, var(--bg) 88%, transparent);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--line);
+  }
+  .brand {
+    font-family: var(--serif);
+    font-size: 22px;
+    letter-spacing: .02em;
+  }
+  .brand span { color: var(--accent); }
+  .top-actions { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+  .icon-btn {
+    width: 36px; height: 36px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: var(--surface);
+    color: var(--ink-muted);
+    font-size: 15px;
+    cursor: pointer;
+  }
+  .icon-btn:hover { color: var(--ink); border-color: var(--ink-muted); }
+  main { max-width: 1120px; margin: 0 auto; padding: 40px 32px 80px; }
+  h1 {
+    font-family: var(--serif);
+    font-weight: 400;
+    font-size: 42px;
+    line-height: 1.15;
+    margin: 0 0 8px;
+  }
+  .lead { color: var(--ink-muted); margin: 0 0 32px; max-width: 560px; }
+  .upload {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 14px;
+    padding: 20px;
+    border: 1px dashed var(--line);
+    border-radius: 16px;
+    background: var(--surface);
+    margin-bottom: 40px;
+  }
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 11px 20px;
+    border: 0;
+    border-radius: 999px;
+    background: var(--accent);
+    color: #FFF8F2;
+    font: inherit;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  .btn:hover { filter: brightness(1.08); }
+  .btn[disabled] { opacity: .55; cursor: default; filter: none; }
+  .hint { color: var(--ink-muted); font-size: 13px; }
+  .note { font-size: 14px; }
+  .note.error { color: #B3261E; }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 30px 24px;
+  }
+  .card { text-align: left; cursor: pointer; background: none; border: 0; padding: 0; color: inherit; font: inherit; }
+  .cover {
+    position: relative;
+    aspect-ratio: 2 / 3;
+    border-radius: 6px 12px 12px 6px;
+    background: linear-gradient(150deg, var(--book-a), var(--book-b));
+    box-shadow: var(--shadow);
+    overflow: hidden;
+    display: flex; flex-direction: column; justify-content: space-between;
+    padding: 20px 18px;
+    color: #FBF6EC;
+    transition: transform .2s;
+  }
+  .card:hover .cover { transform: translateY(-4px); }
+  .cover::after {
+    content: ""; position: absolute; inset: 0 auto 0 0; width: 9px;
+    background: linear-gradient(90deg, rgba(0,0,0,.28), rgba(255,255,255,.06) 60%, rgba(0,0,0,.12));
+  }
+  .cover img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .cover-title { position: relative; z-index: 1; font-family: var(--serif); font-size: 20px; line-height: 1.2; text-shadow: 0 2px 12px rgba(0,0,0,.45); }
+  .cover-author { position: relative; z-index: 1; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; opacity: .9; text-shadow: 0 2px 10px rgba(0,0,0,.4); }
+  .card-title { margin: 14px 0 2px; font-family: var(--serif); font-size: 18px; }
+  .card-meta { color: var(--ink-muted); font-size: 13px; }
+  .empty {
+    padding: 48px 24px;
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    background: var(--surface);
+    text-align: center;
+    color: var(--ink-muted);
+  }
+  .back {
+    display: inline-flex; align-items: center; gap: 6px;
+    margin-bottom: 26px;
+    border: 0; background: none; padding: 0;
+    color: var(--ink-muted); font: inherit; font-size: 14px; cursor: pointer;
+  }
+  .back:hover { color: var(--ink); }
+  .book-head { display: flex; gap: 36px; align-items: flex-start; margin-bottom: 44px; }
+  .book-head .cover { width: 230px; flex: 0 0 230px; }
+  .book-info h1 { font-size: 40px; }
+  .book-author { margin: 0 0 18px; color: var(--ink-muted); font-size: 16px; }
+  .facts { display: flex; gap: 28px; flex-wrap: wrap; margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--line); }
+  .fact b { display: block; font-family: var(--serif); font-size: 22px; font-weight: 400; }
+  .fact span { color: var(--ink-muted); font-size: 13px; }
+  .chapters { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
+  .chapters li { display: flex; align-items: baseline; gap: 16px; padding: 14px 4px; border-bottom: 1px solid var(--line); }
+  .chapters .num { flex: 0 0 34px; color: var(--ink-muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+  .chapters .name { flex: 1; font-family: var(--serif); font-size: 19px; }
+  .chapters .size { color: var(--ink-muted); font-size: 12px; white-space: nowrap; }
+  .section-title { font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-muted); margin: 0 0 6px; }
+  @media (max-width: 720px) {
+    .top { padding: 12px 18px; }
+    main { padding: 28px 18px 60px; }
+    h1 { font-size: 32px; }
+    .book-head { flex-direction: column; gap: 22px; }
+    .book-head .cover { width: 170px; flex: none; }
+    .book-info h1 { font-size: 30px; }
+  }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="brand">MARGIN<span>·</span>ALIA</div>
+  <div class="top-actions">
+    <button class="icon-btn" id="themeBtn" type="button" title="Светлая или тёмная тема">◐</button>
+  </div>
+</header>
+
+<main id="app"></main>
+
+<input type="file" id="file" accept=".epub,.txt" hidden>
+<script>
+  const app = document.getElementById("app");
+  const themeBtn = document.getElementById("themeBtn");
+  const fileInput = document.getElementById("file");
+
+  const pageBase = location.pathname.endsWith("/") ? location.pathname : location.pathname + "/";
+
+  async function api(path, options) {
+    const response = await fetch(pageBase + path, options);
+    if (!response.ok) throw new Error((await response.text()) || ("Ошибка " + response.status));
+    return response.json();
+  }
+
+  function esc(value) {
+    return String(value ?? "").replace(/[&<>"']/g, (ch) => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+    })[ch]);
+  }
+
+  function chaptersWord(n) {
+    const ten = n % 10, hundred = n % 100;
+    if (ten === 1 && hundred !== 11) return "глава";
+    if (ten >= 2 && ten <= 4 && (hundred < 12 || hundred > 14)) return "главы";
+    return "глав";
+  }
+
+  function number(n) {
+    return new Intl.NumberFormat("ru-RU").format(n);
+  }
+
+  function coverMarkup(book, extraClass) {
+    if (book.cover) {
+      return `<div class="cover ${extraClass || ""}">
+        <img src="${esc(pageBase)}covers/${encodeURIComponent(book.cover)}" alt="Обложка: ${esc(book.title)}">
+      </div>`;
+    }
+    return `<div class="cover ${extraClass || ""}">
+      <div class="cover-title">${esc(book.title)}</div>
+      <div class="cover-author">${esc(book.author || "Без автора")}</div>
+    </div>`;
+  }
+
+  function showLibrary() {
+    app.innerHTML = `
+      <h1>Библиотека</h1>
+      <p class="lead">Добавьте книгу в EPUB или TXT. Приложение разберёт её на главы и покажет, из чего она состоит.</p>
+      <div class="upload">
+        <button class="btn" type="button" id="addBtn">Добавить книгу</button>
+        <span class="hint">EPUB или TXT, до 100 МБ</span>
+        <span class="note" id="note"></span>
+      </div>
+      <div id="shelf"></div>`;
+
+    document.getElementById("addBtn").addEventListener("click", () => fileInput.click());
+    loadShelf();
+  }
+
+  async function loadShelf() {
+    const shelf = document.getElementById("shelf");
+    let books;
+    try {
+      books = await api("api/books");
+    } catch (error) {
+      shelf.innerHTML = `<p class="note error">${esc(error.message)}</p>`;
+      return;
+    }
+    if (!books.length) {
+      shelf.innerHTML = `<div class="empty">Пока пусто. Добавьте первую книгу.</div>`;
+      return;
+    }
+    shelf.innerHTML = `<div class="grid">${books.map((book) => `
+      <button class="card" type="button" data-book="${esc(book.id)}">
+        ${coverMarkup(book)}
+        <div class="card-title">${esc(book.title)}</div>
+        <div class="card-meta">${esc(book.author || "Без автора")} · ${book.chapter_count} ${chaptersWord(book.chapter_count)}</div>
+      </button>`).join("")}</div>`;
+
+    shelf.querySelectorAll("[data-book]").forEach((card) => {
+      card.addEventListener("click", () => { location.hash = "/book/" + card.dataset.book; });
+    });
+  }
+
+  async function uploadBook(file) {
+    const note = document.getElementById("note");
+    const button = document.getElementById("addBtn");
+    if (!note || !button) return;
+    note.className = "note";
+    note.textContent = "Разбираю книгу…";
+    button.disabled = true;
+    try {
+      const result = await api("api/upload", {
+        method: "POST",
+        headers: { "X-Filename": encodeURIComponent(file.name) },
+        body: file
+      });
+      location.hash = "/book/" + result.id;
+    } catch (error) {
+      note.className = "note error";
+      note.textContent = error.message;
+    } finally {
+      button.disabled = false;
+      fileInput.value = "";
+    }
+  }
+
+  async function showBook(id) {
+    app.innerHTML = `<button class="back" type="button" id="backBtn">← Библиотека</button><p class="hint">Открываю книгу…</p>`;
+    document.getElementById("backBtn").addEventListener("click", () => { location.hash = ""; });
+
+    let book;
+    try {
+      book = await api("api/books/" + encodeURIComponent(id));
+    } catch (error) {
+      app.innerHTML = `<button class="back" type="button" id="backBtn">← Библиотека</button>
+        <p class="note error">${esc(error.message)}</p>`;
+      document.getElementById("backBtn").addEventListener("click", () => { location.hash = ""; });
+      return;
+    }
+
+    const chapters = book.chapters.map((chapter) => `
+      <li>
+        <span class="num">${String(chapter.idx).padStart(2, "0")}</span>
+        <span class="name">${esc(chapter.title)}</span>
+        <span class="size">${number(chapter.chars)} зн.</span>
+      </li>`).join("");
+
+    app.innerHTML = `
+      <button class="back" type="button" id="backBtn">← Библиотека</button>
+      <section class="book-head">
+        ${coverMarkup(book, "large")}
+        <div class="book-info">
+          <h1>${esc(book.title)}</h1>
+          <p class="book-author">${esc(book.author || "Автор не указан")}</p>
+          <div class="facts">
+            <div class="fact"><b>${book.chapter_count}</b><span>${chaptersWord(book.chapter_count)}</span></div>
+            <div class="fact"><b>${number(book.char_count)}</b><span>знаков</span></div>
+            <div class="fact"><b>${esc((book.lang || "—").toUpperCase())}</b><span>язык</span></div>
+          </div>
+        </div>
+      </section>
+      <h2 class="section-title">Содержание</h2>
+      <ol class="chapters">${chapters}</ol>`;
+
+    document.getElementById("backBtn").addEventListener("click", () => { location.hash = ""; });
+  }
+
+  function route() {
+    const match = location.hash.match(/^#\/book\/(.+)$/);
+    if (match) showBook(decodeURIComponent(match[1]));
+    else showLibrary();
+  }
+
+  fileInput.addEventListener("change", () => {
+    if (fileInput.files.length) uploadBook(fileInput.files[0]);
+  });
+
+  function applyTheme(theme) {
+    document.documentElement.dataset.theme = theme;
+    localStorage.setItem("theme", theme);
+  }
+  themeBtn.addEventListener("click", () => {
+    applyTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark");
+  });
+  applyTheme(localStorage.getItem("theme") || "light");
+
+  window.addEventListener("hashchange", route);
+  route();
+</script>
+</body>
+</html>
