@@ -1,13 +1,15 @@
 """Извлечение идей из главы книги через класс-API чата.
 
 Идея — короткая мысль из главы, у которой есть настоящая цитата из текста.
-Пока цитаты не проверяются (это следующий шаг), но модель обязана копировать
-их дословно.
+После ответа модели каждая цитата ищется в тексте главы: пробелы и неразрывные
+пробелы не в счёт, остальное должно совпасть почти посимвольно. Цитата
+заменяется на настоящий кусок текста книги, а идея без цитаты выбрасывается.
 
 Запуск: python3 app/extract.py <book_id> <chapter>
 """
 from __future__ import annotations
 
+import difflib
 import json
 import sys
 import urllib.error
@@ -79,6 +81,87 @@ def parse_ideas(answer: str) -> list[dict]:
     return ideas
 
 
+MIN_RATIO = 0.9  # насколько цитата должна быть похожа на текст главы
+
+
+def squash(text: str) -> tuple[str, list[int]]:
+    """Схлопывает все пробелы в один и запоминает, откуда взялся каждый знак."""
+    letters: list[str] = []
+    places: list[int] = []
+    after_space = False
+    for i, ch in enumerate(text):
+        if ch.isspace():
+            if not after_space:
+                letters.append(" ")
+                places.append(i)
+            after_space = True
+        else:
+            letters.append(ch)
+            places.append(i)
+            after_space = False
+    return "".join(letters), places
+
+
+def find_quote(quote: str, text: str) -> tuple[str, float] | None:
+    """Ищет цитату в тексте главы.
+
+    Возвращает настоящий кусок текста книги и похожесть (1.0 — точное
+    совпадение) или None, если цитаты в тексте нет.
+    """
+    short, places = squash(text)
+    wanted = squash(quote)[0]
+    if len(wanted) < 20:
+        return None
+    best: tuple[float, int, int] | None = None
+    for part in (0.5, 0.3, 0.7, 0.15, 0.85):
+        offset = int(len(wanted) * part)
+        seed = wanted[offset:offset + 40]
+        if len(seed) < 20:
+            continue
+        pos = short.find(seed)
+        if pos == -1:
+            continue
+        start = pos - offset
+        for shift in range(-8, 9):
+            begin = start + shift
+            if begin < 0 or begin >= len(short):
+                continue
+            window = short[begin:begin + len(wanted)]
+            matcher = difflib.SequenceMatcher(None, wanted, window, autojunk=False)
+            if matcher.quick_ratio() < 0.8:
+                continue
+            ratio = matcher.ratio()
+            if ratio >= MIN_RATIO and (best is None or ratio > best[0]):
+                best = (ratio, begin, begin + len(wanted))
+        if best and best[0] > 0.98:
+            break
+    if best is None:
+        return None
+    ratio, begin, end = best
+    while end > begin and short[end - 1] == " ":
+        end -= 1
+    while begin < end and short[begin] == " ":
+        begin += 1
+    real = text[places[begin]:places[end - 1] + 1].strip()
+    return real, round(ratio, 3)
+
+
+def check_ideas(ideas: list[dict], text: str) -> tuple[list[dict], int]:
+    """Оставляет только идеи, чья цитата нашлась в главе. Цитату берёт из книги."""
+    kept, dropped = [], 0
+    for idea in ideas:
+        found = find_quote(idea["quote"], text)
+        if found is None:
+            dropped += 1
+            print(f"  цитата не найдена в главе, идея отброшена: «{idea['quote'][:80]}…»")
+            continue
+        quote, ratio = found
+        if ratio < 1.0:
+            print(f"  цитата чуть отличалась от книги ({ratio}), взял текст книги")
+        kept.append({"idea": idea["idea"], "quote": quote, "why": idea["why"]})
+    return kept, dropped
+
+
 def split_text(text: str, limit: int = CHUNK) -> list[str]:
     """Режет главу по абзацам на куски не длиннее limit знаков."""
     chunks, current = [], ""
@@ -128,15 +211,18 @@ def main() -> None:
     print(f"Глава «{chapter['title']}»: {len(chapter['text'])} знаков, кусков: {len(chunks)}")
 
     ideas: list[dict] = []
+    dropped = 0
     for number, chunk in enumerate(chunks, 1):
         prompt = PROMPT.format(title=chapter["title"], text=chunk)
         answer = chat([{"role": "user", "content": prompt}])
         found = parse_ideas(answer)
-        print(f"  кусок {number}: идей {len(found)}")
-        ideas.extend(found)
+        kept, lost = check_ideas(found, chapter["text"])
+        dropped += lost
+        print(f"  кусок {number}: идей {len(found)}, с цитатой из книги {len(kept)}")
+        ideas.extend(kept)
 
     save_ideas(book_id, chapter_idx, ideas)
-    print(f"Сохранено идей: {len(ideas)}")
+    print(f"Сохранено идей: {len(ideas)}" + (f", без цитаты отброшено: {dropped}" if dropped else ""))
     for idea in ideas[:3]:
         print(f"- {idea['idea']}\n  «{idea['quote'][:120]}»")
 
