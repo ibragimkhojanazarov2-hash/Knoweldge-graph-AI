@@ -57,6 +57,15 @@ def init_db() -> None:
                 text TEXT NOT NULL,
                 PRIMARY KEY (book_id, idx)
             );
+            CREATE TABLE IF NOT EXISTS ideas (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                book_id TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+                chapter INTEGER NOT NULL,
+                idea TEXT NOT NULL,
+                quote TEXT NOT NULL,
+                why TEXT NOT NULL,
+                created TEXT NOT NULL
+            );
             """
         )
 
