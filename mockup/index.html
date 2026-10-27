@@ -288,23 +288,53 @@
     font-size: 21px;
     line-height: 1.5;
   }
-  /* водяной знак: инициал книги за цитатой */
+  /* ── Водяные знаки: бледные обложки книг ───────────────── */
+  .wm-cover {
+    position: absolute;
+    display: block;
+    border-radius: 6px;
+    overflow: hidden;
+    background: linear-gradient(160deg,
+      color-mix(in srgb, var(--book) 80%, #fff) 0%,
+      var(--book) 46%,
+      color-mix(in srgb, var(--book) 68%, #000) 100%);
+  }
+  .wm-cover::after {            /* корешок */
+    content: "";
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 9%;
+    background: linear-gradient(90deg, rgba(0, 0, 0, .22), transparent);
+  }
+  .wm-cover span {
+    position: absolute;
+    left: 16%;
+    right: 11%;
+    bottom: 11%;
+    font-family: var(--serif);
+    font-weight: 700;
+    line-height: 1.1;
+    color: #FBF6EC;
+  }
+
+  /* библиотека: обложки книг за цитатами «Связи дня» */
   .quote-wm {
     position: absolute;
     top: -34px;
-    right: 4px;
+    right: -4px;
     z-index: -1;
-    font-family: var(--serif);
-    font-size: 132px;
-    font-weight: 700;
-    line-height: 1;
-    color: var(--book);
-    opacity: .06;
-    transform: rotate(-4deg);
+    width: 178px;
+    height: 156px;
+    opacity: .07;
     pointer-events: none;
     user-select: none;
   }
-  [data-theme="dark"] .quote-wm { opacity: .09; }
+  [data-theme="dark"] .quote-wm { opacity: .10; }
+  .quote-wm .wm-cover { font-size: 9px; }
+  .quote-wm .wm-cover:nth-child(1) { width: 80px; height: 112px; top: 18px; left: 6px;   transform: rotate(-8deg); }
+  .quote-wm .wm-cover:nth-child(2) { width: 64px; height: 90px;  top: 4px;  left: 66px;  transform: rotate(7deg); }
+  .quote-wm .wm-cover:nth-child(3) { width: 50px; height: 70px;  top: 62px; left: 118px; transform: rotate(14deg); }
+  .quote-wm .wm-cover:nth-child(4) { width: 46px; height: 64px;  top: 98px; left: 30px;  transform: rotate(-15deg); }
   .quote-meta { margin-top: 10px !important; font-size: 13px; color: var(--ink-muted); }
 
   .relation-badge {
@@ -550,23 +580,24 @@
     overflow-x: hidden;
     overflow-y: auto;
   }
-  /* водяной знак: инициал книги в углу панели */
+  /* карта: стопка бледных обложек в углу панели идеи */
   .panel-wm {
     position: absolute;
-    top: -26px;
-    right: -6px;
+    top: -44px;
+    right: -54px;
     z-index: -1;
-    font-family: var(--serif);
-    font-size: 180px;
-    font-weight: 700;
-    line-height: 1;
-    color: var(--ink);
-    opacity: .05;
-    transform: rotate(-6deg);
+    width: 300px;
+    height: 320px;
+    opacity: .06;
     pointer-events: none;
     user-select: none;
   }
-  [data-theme="dark"] .panel-wm { opacity: .07; }
+  [data-theme="dark"] .panel-wm { opacity: .09; }
+  .panel-wm .wm-cover { font-size: 12px; }
+  .panel-wm .wm-cover:nth-child(1) { width: 140px; height: 198px; top: 40px;  left: 8px;   transform: rotate(-9deg); }
+  .panel-wm .wm-cover:nth-child(2) { width: 116px; height: 164px; top: 10px;  left: 104px; transform: rotate(7deg); }
+  .panel-wm .wm-cover:nth-child(3) { width: 92px;  height: 130px; top: 134px; left: 70px;  transform: rotate(2deg); }
+  .panel-wm .wm-cover:nth-child(4) { width: 78px;  height: 110px; top: 214px; left: 172px; transform: rotate(-6deg); font-size: 10px; }
   .panel .kicker { margin: 0 0 10px; font-size: 10.5px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-muted); }
   .panel h2 { margin: 0 0 10px; font-size: 25px; line-height: 1.25; }
   .panel .meta { margin: 0 0 20px; font-size: 13px; color: var(--ink-muted); }
@@ -620,41 +651,22 @@
   /* ── Страница книги ────────────────────────────────────── */
   #screen-book { position: relative; overflow: hidden; }
 
-  /* водяной знак: бледная обложка книги на фоне страницы */
+  /* книга: бледные обложки на фоне страницы */
   .page-wm {
     position: absolute;
-    top: 30px;
-    right: -150px;
+    inset: 0;
     z-index: 0;
-    width: 560px;
-    height: 800px;
     opacity: .055;
     filter: blur(2px);
-    transform: rotate(-7deg);
     pointer-events: none;
     user-select: none;
   }
-  .page-wm-cover {
-    width: 100%;
-    height: 100%;
-    border-radius: 16px;
-    display: flex;
-    align-items: flex-end;
-    padding: 52px;
-    background: linear-gradient(160deg,
-      color-mix(in srgb, var(--book) 80%, #fff) 0%,
-      var(--book) 46%,
-      color-mix(in srgb, var(--book) 68%, #000) 100%);
-  }
-  .page-wm-cover span {
-    font-family: var(--serif);
-    font-size: 62px;
-    font-weight: 700;
-    line-height: 1.05;
-    color: #FBF6EC;
-    text-shadow: 0 2px 4px rgba(0, 0, 0, .2);
-  }
   [data-theme="dark"] .page-wm { opacity: .06; }
+  .page-wm .wm-cover { border-radius: 16px; }
+  .page-wm .wm-cover:nth-child(1) { width: 560px; height: 800px; top: 20px;  right: -150px; font-size: 62px; transform: rotate(-7deg); }
+  .page-wm .wm-cover:nth-child(2) { width: 340px; height: 480px; top: 420px; right: 250px;  font-size: 34px; transform: rotate(6deg); }
+  .page-wm .wm-cover:nth-child(3) { width: 240px; height: 340px; top: 520px; right: -30px;  font-size: 24px; transform: rotate(-12deg); }
+  .page-wm .wm-cover:nth-child(4) { width: 175px; height: 245px; top: 470px; left: -55px;  font-size: 16px; transform: rotate(9deg); }
   #screen-book .wrap { position: relative; z-index: 1; }
 
   .book-hero {
@@ -746,7 +758,12 @@
       <article class="daily card">
         <div class="daily-grid">
           <div class="quote-block" style="--book: var(--book-a)">
-            <span class="quote-wm" aria-hidden="true">Д</span>
+            <span class="quote-wm" aria-hidden="true">
+              <span class="wm-cover" style="--book: var(--book-a)"><span>Думай медленно… решай быстро</span></span>
+              <span class="wm-cover" style="--book: var(--book-b)"><span>Чёрный лебедь</span></span>
+              <span class="wm-cover" style="--book: #7C6B8F"><span>Sapiens</span></span>
+              <span class="wm-cover" style="--book: var(--book-b)"><span>Антихрупкость</span></span>
+            </span>
             <p class="quote-text">«Люди переоценивают вероятность ярких событий»</p>
             <p class="quote-meta">Даниэль Канеман · Думай медленно… решай быстро · гл. 13</p>
           </div>
@@ -755,7 +772,12 @@
             <span class="rel-label">противоречит</span>
           </div>
           <div class="quote-block" style="--book: var(--book-b)">
-            <span class="quote-wm" aria-hidden="true">Ч</span>
+            <span class="quote-wm" aria-hidden="true">
+              <span class="wm-cover" style="--book: var(--book-b)"><span>Чёрный лебедь</span></span>
+              <span class="wm-cover" style="--book: var(--book-a)"><span>Думай медленно…</span></span>
+              <span class="wm-cover" style="--book: #7C6B8F"><span>Sapiens</span></span>
+              <span class="wm-cover" style="--book: #7C6B8F"><span>21 урок для XXI века</span></span>
+            </span>
             <p class="quote-text">«Редкое событие запоминается сильнее частого»</p>
             <p class="quote-meta">Нассим Талеб · Чёрный лебедь · гл. 4</p>
           </div>
@@ -1004,7 +1026,12 @@
       </div>
 
       <aside class="panel" aria-label="Панель идеи">
-        <span class="panel-wm" aria-hidden="true">Д</span>
+        <div class="panel-wm" aria-hidden="true">
+          <span class="wm-cover" style="--book: var(--book-a)"><span>Думай медленно… решай быстро</span></span>
+          <span class="wm-cover" style="--book: var(--book-b)"><span>Чёрный лебедь</span></span>
+          <span class="wm-cover" style="--book: #7C6B8F"><span>Sapiens</span></span>
+          <span class="wm-cover" style="--book: var(--book-b)"><span>Антихрупкость</span></span>
+        </div>
         <p class="kicker">Тезис <span class="badge-ai">предложено AI</span></p>
         <h2>Люди переоценивают вероятность ярких событий</h2>
         <p class="meta">Даниэль Канеман · Думай медленно… решай быстро · гл. 13, стр. 156</p>
@@ -1038,7 +1065,10 @@
   <!-- ЭКРАН 3: КНИГА -->
   <section class="screen" id="screen-book" aria-label="Страница книги">
     <div class="page-wm" aria-hidden="true">
-      <div class="page-wm-cover" style="--book: var(--book-a)"><span>Думай медленно…<br>решай быстро</span></div>
+      <span class="wm-cover" style="--book: var(--book-a)"><span>Думай медленно…<br>решай быстро</span></span>
+      <span class="wm-cover" style="--book: var(--book-b)"><span>Чёрный лебедь</span></span>
+      <span class="wm-cover" style="--book: #7C6B8F"><span>Sapiens</span></span>
+      <span class="wm-cover" style="--book: #7C6B8F"><span>21 урок<br>для XXI века</span></span>
     </div>
     <div class="wrap">
 
