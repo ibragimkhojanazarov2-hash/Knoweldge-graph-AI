@@ -221,6 +221,24 @@
     color: var(--ink-muted);
   }
   .idea-page .idea-why { margin-bottom: 30px; }
+  .note-form { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; margin: 0 0 18px; }
+  .note-form textarea {
+    width: 100%; box-sizing: border-box; min-height: 84px; resize: vertical;
+    padding: 12px 14px; border: 1px solid var(--line); border-radius: 14px;
+    background: var(--surface, transparent); color: var(--ink);
+    font: inherit; font-size: 15px; line-height: 1.5;
+  }
+  .note-form textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .notes { list-style: none; margin: 0 0 30px; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+  .note-item { padding: 12px 14px; border: 1px solid var(--line); border-radius: 14px; }
+  .note-text { margin: 0 0 8px; font-size: 15px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .note-meta { margin: 0; display: flex; gap: 12px; align-items: center; font-size: 12px; color: var(--ink-muted); }
+  .note-del {
+    border: 0; padding: 0; background: none; color: var(--ink-muted);
+    font: inherit; font-size: 12px; cursor: pointer; text-decoration: underline;
+  }
+  .note-del:hover { color: var(--accent); }
+  #noteList .hint { margin: 0 0 30px; }
   .link-head {
     display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px;
     margin: 0 0 8px; font-size: 12px; color: var(--ink-muted);
@@ -521,6 +539,45 @@
     same: "то же самое",
   };
 
+  function noteDate(value) {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    return date.toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" });
+  }
+
+  function notesMarkup(notes) {
+    if (!notes.length) {
+      return `<p class="hint">Пока пусто. Запишите мысль, вопрос или то, что хотите запомнить.</p>`;
+    }
+    return `<ul class="notes">${notes.map((note) => `
+      <li class="note-item">
+        <p class="note-text">${esc(note.text)}</p>
+        <p class="note-meta">
+          <span>${esc(noteDate(note.created))}</span>
+          <button class="note-del" type="button" data-del="${note.id}">Удалить</button>
+        </p>
+      </li>`).join("")}</ul>`;
+  }
+
+  function bindNotes(ideaId, notes) {
+    const list = document.getElementById("noteList");
+    if (!list) return;
+    list.innerHTML = notesMarkup(notes);
+    list.querySelectorAll("[data-del]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        button.disabled = true;
+        try {
+          await api("api/notes/" + button.dataset.del, { method: "DELETE" });
+          notes = notes.filter((note) => String(note.id) !== button.dataset.del);
+          bindNotes(ideaId, notes);
+        } catch (error) {
+          button.disabled = false;
+          alert(error.message);
+        }
+      });
+    });
+  }
+
   async function showIdea(ideaId) {
     let idea;
     try {
@@ -532,6 +589,7 @@
     const back = () => {
       location.hash = "/book/" + encodeURIComponent(idea.book_id) + "/chapter/" + idea.chapter;
     };
+    let notes = idea.notes || [];
     const links = idea.links || [];
     const linksMarkup = links.length
       ? `<ul class="ideas">${links.map((link) => `
@@ -555,10 +613,44 @@
         <p class="idea-text">${esc(idea.idea)}</p>
         <blockquote>${esc(idea.quote)}</blockquote>
         <p class="idea-why">${esc(idea.why)}</p>
+        <h2 class="section-title">Мои заметки</h2>
+        <form class="note-form" id="noteForm">
+          <textarea id="noteText" rows="3" maxlength="5000"
+            placeholder="Мысль, вопрос или то, что хотите запомнить"></textarea>
+          <button class="btn" type="submit">Сохранить заметку</button>
+        </form>
+        <div id="noteList"></div>
         <h2 class="section-title">Связи с другими книгами</h2>
         ${linksMarkup}
       </article>`;
     document.getElementById("backBtn").addEventListener("click", back);
+
+    bindNotes(ideaId, notes);
+    const noteForm = document.getElementById("noteForm");
+    const noteText = document.getElementById("noteText");
+    noteForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const text = noteText.value.trim();
+      if (!text) {
+        noteText.focus();
+        return;
+      }
+      const button = noteForm.querySelector(".btn");
+      button.disabled = true;
+      try {
+        const note = await api("api/ideas/" + ideaId + "/notes", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text }),
+        });
+        notes.unshift(note);
+        noteText.value = "";
+        bindNotes(ideaId, notes);
+      } catch (error) {
+        alert(error.message);
+      }
+      button.disabled = false;
+    });
   }
 
   function route() {

@@ -9,6 +9,7 @@ import hashlib
 import json
 import mimetypes
 import posixpath
+import re
 import sqlite3
 import sys
 import zipfile
@@ -26,6 +27,8 @@ COVERS = DATA / "covers"
 DB = DATA / "library.db"
 INDEX = Path(__file__).resolve().parent / "index.html"
 MAX_UPLOAD = 100 * 1024 * 1024  # 100 МБ
+MAX_NOTE_BYTES = 20000  # тело запроса с заметкой
+MAX_NOTE_CHARS = 5000   # длина самой заметки
 
 
 def connect() -> sqlite3.Connection:
@@ -91,6 +94,13 @@ def init_db() -> None:
                 confidence REAL NOT NULL,
                 created TEXT NOT NULL,
                 UNIQUE(from_id, to_id)
+            );
+            CREATE TABLE IF NOT EXISTS notes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                idea_id INTEGER NOT NULL REFERENCES ideas(id) ON DELETE CASCADE,
+                text TEXT NOT NULL,
+                created TEXT NOT NULL,
+                updated TEXT NOT NULL
             );
             """
         )
@@ -249,7 +259,41 @@ def get_idea(idea_id: int) -> dict | None:
         ).fetchall()
     result = dict(row)
     result["links"] = [dict(link) for link in links]
+    result["notes"] = get_notes(idea_id)
     return result
+
+
+def idea_exists(idea_id: int) -> bool:
+    with connect() as db:
+        row = db.execute("SELECT 1 FROM ideas WHERE id = ?", (idea_id,)).fetchone()
+    return row is not None
+
+
+def get_notes(idea_id: int) -> list[dict]:
+    """Заметки читателя к идее, новые сверху."""
+    with connect() as db:
+        rows = db.execute(
+            "SELECT id, text, created FROM notes WHERE idea_id = ? ORDER BY id DESC",
+            (idea_id,),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def add_note(idea_id: int, text: str) -> dict:
+    created = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    with connect() as db:
+        cursor = db.execute(
+            "INSERT INTO notes (idea_id, text, created, updated) VALUES (?, ?, ?, ?)",
+            (idea_id, text, created, created),
+        )
+        note_id = cursor.lastrowid
+    return {"id": note_id, "text": text, "created": created}
+
+
+def delete_note(note_id: int) -> bool:
+    with connect() as db:
+        cursor = db.execute("DELETE FROM notes WHERE id = ?", (note_id,))
+    return cursor.rowcount > 0
 
 
 def get_summary(book_id: str) -> dict | None:
@@ -350,6 +394,12 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         path = strip_prefix(unquote(urlparse(self.path).path))
+
+        note_route = re.fullmatch(r"/api/ideas/(\d+)/notes", path)
+        if note_route:
+            self.save_note(int(note_route.group(1)))
+            return
+
         if path != "/api/upload":
             self.send_error_text(404, "Нет такой страницы.")
             return
@@ -377,6 +427,43 @@ class Handler(BaseHTTPRequestHandler):
             self.send_error_text(400, "Файл повреждён или это не EPUB.")
             return
         self.send_json({"id": book_id})
+
+    def do_DELETE(self) -> None:
+        path = strip_prefix(unquote(urlparse(self.path).path))
+        match = re.fullmatch(r"/api/notes/(\d+)", path)
+        if not match:
+            self.send_error_text(404, "Нет такой страницы.")
+            return
+        if not delete_note(int(match.group(1))):
+            self.send_error_text(404, "Заметка не найдена.")
+            return
+        self.send_json({"ok": True})
+
+    def save_note(self, idea_id: int) -> None:
+        """Новая заметка к идее: JSON {"text": "..."}."""
+        if not idea_exists(idea_id):
+            self.send_error_text(404, "Идея не найдена.")
+            return
+        length = int(self.headers.get("Content-Length") or 0)
+        if length <= 0:
+            self.send_error_text(400, "Пустая заметка.")
+            return
+        if length > MAX_NOTE_BYTES:
+            self.send_error_text(413, "Заметка слишком длинная.")
+            return
+        try:
+            data = json.loads(self.rfile.read(length) or b"{}")
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            self.send_error_text(400, "Не смог прочитать заметку.")
+            return
+        text = str((data if isinstance(data, dict) else {}).get("text") or "").strip()
+        if not text:
+            self.send_error_text(400, "Заметка пустая.")
+            return
+        if len(text) > MAX_NOTE_CHARS:
+            self.send_error_text(413, f"Заметка длиннее {MAX_NOTE_CHARS} символов.")
+            return
+        self.send_json(add_note(idea_id, text))
 
     def send_json(self, data) -> None:
         body = json.dumps(data, ensure_ascii=False).encode()
