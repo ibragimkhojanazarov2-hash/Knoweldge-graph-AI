@@ -15,7 +15,7 @@ import json
 import sys
 from datetime import datetime, timezone
 
-from extract import chat
+from llm import chat
 from server import connect, get_all_ideas, get_book, init_db, list_books
 
 BATCH = 50      # идей в одном запросе при первом отборе

@@ -12,7 +12,7 @@ import json
 import sys
 from datetime import datetime, timezone
 
-from extract import chat
+from llm import chat
 from server import connect, get_book, get_key_ideas, init_db, list_books
 
 POINTS_SHORT = 5  # пунктов для отрывка

@@ -13,14 +13,11 @@ from __future__ import annotations
 import difflib
 import json
 import sys
-import urllib.error
-import urllib.request
 from datetime import datetime, timezone
 
+from llm import chat
 from server import connect, get_book, get_chapter, init_db
 
-API = "http://127.0.0.1:19040/v1/chat/completions"
-MODEL = "DeepSeek-V4.1-Flash"
 CHUNK = 8000  # знаков текста в одном запросе
 
 PROMPT = """Ты помогаешь читателю разобрать книгу на идеи.
@@ -39,27 +36,6 @@ PROMPT = """Ты помогаешь читателю разобрать книг
 
 Ответь только JSON-массивом объектов, без другого текста:
 [{{"idea": "...", "quote": "...", "why": "..."}}]"""
-
-
-def chat(messages: list[dict], max_tokens: int = 2000) -> str:
-    body = {
-        "model": MODEL,
-        "max_tokens": max_tokens,
-        "chat_template_kwargs": {"enable_thinking": False},
-        "messages": messages,
-    }
-    request = urllib.request.Request(
-        API, json.dumps(body).encode(), {"Content-Type": "application/json"}
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=180) as response:
-            data = json.load(response)
-    except urllib.error.HTTPError as exc:
-        raise RuntimeError(exc.read().decode("utf-8", "replace") or str(exc)) from exc
-    content = data["choices"][0]["message"]["content"]
-    if not content or not content.strip():
-        raise RuntimeError("Модель вернула пустой ответ.")
-    return content
 
 
 def parse_ideas(answer: str) -> list[dict]:
