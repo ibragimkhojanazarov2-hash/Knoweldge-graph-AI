@@ -5,7 +5,8 @@
 пробелы не в счёт, остальное должно совпасть почти посимвольно. Цитата
 заменяется на настоящий кусок текста книги, а идея без цитаты выбрасывается.
 
-Запуск: python3 app/extract.py <book_id> <chapter>
+Запуск: python3 app/extract.py <book_id> <глава|all>
+        all — все главы книги по порядку; идеи каждой главы сохраняются сразу.
 """
 from __future__ import annotations
 
@@ -16,7 +17,7 @@ import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 
-from server import connect, get_chapter, init_db
+from server import connect, get_book, get_chapter, init_db
 
 API = "http://127.0.0.1:19040/v1/chat/completions"
 MODEL = "DeepSeek-V4.1-Flash"
@@ -195,20 +196,11 @@ def save_ideas(book_id: str, chapter: int, ideas: list[dict]) -> None:
         )
 
 
-def main() -> None:
-    if len(sys.argv) != 3:
-        print("Запуск: python3 app/extract.py <book_id> <chapter>", file=sys.stderr)
-        raise SystemExit(2)
-    book_id, chapter_idx = sys.argv[1], int(sys.argv[2])
-
-    init_db()
-    chapter = get_chapter(book_id, chapter_idx)
-    if chapter is None:
-        print(f"Глава {chapter_idx} книги {book_id} не найдена.", file=sys.stderr)
-        raise SystemExit(1)
-
+def extract_chapter(book_id: str, chapter: dict) -> tuple[int, int]:
+    """Делает идеи одной главы и сохраняет их. Возвращает (сохранено, отброшено)."""
+    chapter_idx = chapter["idx"]
     chunks = split_text(chapter["text"])
-    print(f"Глава «{chapter['title']}»: {len(chapter['text'])} знаков, кусков: {len(chunks)}")
+    print(f"Глава «{chapter['title']}»: {len(chapter['text'])} знаков, кусков: {len(chunks)}", flush=True)
 
     ideas: list[dict] = []
     dropped = 0
@@ -218,13 +210,48 @@ def main() -> None:
         found = parse_ideas(answer)
         kept, lost = check_ideas(found, chapter["text"])
         dropped += lost
-        print(f"  кусок {number}: идей {len(found)}, с цитатой из книги {len(kept)}")
+        print(f"  кусок {number}: идей {len(found)}, с цитатой из книги {len(kept)}", flush=True)
         ideas.extend(kept)
 
     save_ideas(book_id, chapter_idx, ideas)
-    print(f"Сохранено идей: {len(ideas)}" + (f", без цитаты отброшено: {dropped}" if dropped else ""))
+    print(f"Сохранено идей: {len(ideas)}" + (f", без цитаты отброшено: {dropped}" if dropped else ""),
+          flush=True)
     for idea in ideas[:3]:
         print(f"- {idea['idea']}\n  «{idea['quote'][:120]}»")
+    return len(ideas), dropped
+
+
+def main() -> None:
+    if len(sys.argv) != 3:
+        print("Запуск: python3 app/extract.py <book_id> <глава|all>", file=sys.stderr)
+        raise SystemExit(2)
+    book_id, where = sys.argv[1], sys.argv[2]
+
+    init_db()
+    if where == "all":
+        book = get_book(book_id)
+        if book is None:
+            print(f"Книга {book_id} не найдена.", file=sys.stderr)
+            raise SystemExit(1)
+        indexes = [c["idx"] for c in book["chapters"]]
+        print(f"Книга «{book['title']}»: глав {len(indexes)}", flush=True)
+    else:
+        indexes = [int(where)]
+
+    total, dropped = 0, 0
+    for number, chapter_idx in enumerate(indexes, 1):
+        chapter = get_chapter(book_id, chapter_idx)
+        if chapter is None:
+            print(f"Глава {chapter_idx} книги {book_id} не найдена.", file=sys.stderr)
+            raise SystemExit(1)
+        print(f"\n[{number}/{len(indexes)}] глава {chapter_idx}", flush=True)
+        kept, lost = extract_chapter(book_id, chapter)
+        total += kept
+        dropped += lost
+
+    if where == "all":
+        print(f"\nИтого идей по книге: {total}"
+              + (f", без цитаты отброшено: {dropped}" if dropped else ""), flush=True)
 
 
 if __name__ == "__main__":
