@@ -320,7 +320,7 @@ def get_graph(all_ideas: bool = False) -> dict:
     where = "" if all_ideas else f" WHERE {linked}"
     with connect() as db:
         books = [dict(row) for row in db.execute(
-            "SELECT id, title, author FROM books ORDER BY added"
+            "SELECT id, title, author, cover FROM books ORDER BY added"
         ).fetchall()]
         ideas = [dict(row) for row in db.execute(
             "SELECT i.id, i.book_id, b.title AS book_title, i.chapter, i.idea, i.quote, i.why,"
