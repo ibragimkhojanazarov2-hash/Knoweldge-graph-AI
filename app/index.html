@@ -330,7 +330,9 @@
   .map-tools .wide { width: auto; padding: 0 10px; font-size: 12px; }
   .map-tools label { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-muted); padding: 0 6px; cursor: pointer; }
   #filtersBtn { display: none; }
-  .map-edge { fill: none; }
+  .map-edge { fill: none; cursor: pointer; }
+  .map-edge.sel { opacity: 1; }
+  .map-edge.sel path { opacity: 1; }
   .map-edge-badge { fill: var(--bg); stroke-width: 1.5; }
   .map-edge-icon {
     font-family: var(--sans); font-size: 11px; text-anchor: middle;
@@ -346,7 +348,7 @@
     pointer-events: none;
   }
   .map-node.sel text { font-weight: 600; }
-  .map-edge.dim, .map-node.dim { opacity: .12; }
+  .map-edge.dim, .map-node.dim { opacity: .15; }
   .map-head-title {
     font-family: var(--serif); font-size: 16px; fill: var(--ink);
   }
@@ -410,6 +412,14 @@
   .p-link-book { color: var(--ink-muted); font-size: 11px; }
   .p-link-why { margin: 5px 0 0; font-size: 12px; color: var(--ink-muted); line-height: 1.4; }
   .p-link-conf { color: var(--ink-muted); font-size: 11px; }
+  .p-pair { padding: 14px 0; border-top: 1px solid var(--line); }
+  .p-pair:first-of-type { border-top: 0; }
+  .p-pair-book { color: var(--ink-muted); font-size: 11px; margin: 0 0 6px; }
+  .p-pair-idea { font-family: var(--serif); font-size: 17px; line-height: 1.35; margin: 0 0 10px; font-weight: 400; }
+  .p-pair-mid {
+    display: flex; align-items: center; justify-content: center;
+    font-size: 15px; margin: 2px 0;
+  }
   .p-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--line); }
   .vbtn {
     padding: 8px 13px; border: 1px solid var(--line); border-radius: 999px;
@@ -1019,6 +1029,7 @@
       allLoaded: Boolean(allLoaded),
       loading: false,
       selected: null,
+      selectedLink: null,
     };
   }
 
@@ -1141,6 +1152,10 @@
     const { ideas, links, degree } = visibleMap();
     const shownIds = new Set(ideas.map((idea) => Number(idea.id)));
     const selected = state.selected && shownIds.has(state.selected) ? state.selected : null;
+    const pair = state.selectedLink;
+    const pairOn = pair && shownIds.has(Number(pair.from)) && shownIds.has(Number(pair.to))
+      ? { from: Number(pair.from), to: Number(pair.to) }
+      : null;
     const neighbors = new Set();
     if (selected) {
       neighbors.add(selected);
@@ -1166,7 +1181,11 @@
       const style = LINK_STYLES[link.type] || LINK_STYLES.same;
       const r1 = nodeRadius(degree.get(from) || 0) + 1;
       const r2 = nodeRadius(degree.get(to) || 0) + 2;
-      const dim = selected && from !== selected && to !== selected;
+      const onPair = pairOn && ((from === pairOn.from && to === pairOn.to)
+        || (from === pairOn.to && to === pairOn.from));
+      const dim = selected
+        ? from !== selected && to !== selected
+        : pairOn ? !onPair : false;
       // Дуга выходит из точки горизонтально и так же входит в соседнюю:
       // между колонками это читается как плавная связь, а не как клубок.
       const sign = b.x >= a.x ? 1 : -1;
@@ -1186,13 +1205,16 @@
       }
       if (!spot) spot = { x: (x1 + x2) / 2, y: (a.y + b.y) / 2 };
       placed.push(spot);
-      edgeParts.push(
-        '<g class="map-edge' + (dim ? " dim" : "") + '" data-edge="' + from + "-" + to + '"'
-        + ' data-conf="' + link.confidence + '">'
-        + '<path d="M' + x1.toFixed(1) + " " + a.y.toFixed(1)
+      const d = "M" + x1.toFixed(1) + " " + a.y.toFixed(1)
         + " C" + c1.toFixed(1) + " " + a.y.toFixed(1)
         + ", " + c2.toFixed(1) + " " + b.y.toFixed(1)
-        + ", " + x2.toFixed(1) + " " + b.y.toFixed(1) + '"'
+        + ", " + x2.toFixed(1) + " " + b.y.toFixed(1);
+      edgeParts.push(
+        '<g class="map-edge' + (dim ? " dim" : "") + (onPair ? " sel" : "")
+        + '" data-edge="' + from + "-" + to + '"'
+        + ' data-conf="' + link.confidence + '">'
+        + '<path d="' + d + '" stroke="transparent" stroke-width="16" fill="none"/>'
+        + '<path d="' + d + '"'
         + ' stroke="' + style.color + '" stroke-width="' + edgeWidth(link.confidence) + '"'
         + (style.dash ? ' stroke-dasharray="' + style.dash + '"' : "")
         + ' opacity=".8"/>'
@@ -1213,13 +1235,16 @@
         ? ' style="stroke:var(--' + (idea.verdict === "right" ? "supports" : "contradicts")
           + ');stroke-width:2.5"'
         : "";
-      const dim = selected && !neighbors.has(id);
+      const dim = selected
+        ? !neighbors.has(id)
+        : pairOn ? id !== pairOn.from && id !== pairOn.to : false;
+      const isSel = id === selected || Boolean(pairOn && (id === pairOn.from || id === pairOn.to));
       const label = state.labels
         ? '<text class="map-label" x="' + (point.labelX - point.x).toFixed(1) + '"'
           + ' y="' + (point.below ? radius + 18 : 5) + '" text-anchor="' + point.anchor + '">'
           + esc(point.label) + '</text>'
         : "";
-      return '<g class="map-node' + (id === selected ? " sel" : "") + (dim ? " dim" : "")
+      return '<g class="map-node' + (isSel ? " sel" : "") + (dim ? " dim" : "")
         + '" data-id="' + id + '" transform="translate(' + point.x.toFixed(1) + ","
         + point.y.toFixed(1) + ')"><title>' + esc(idea.idea) + '</title>'
         + '<circle r="' + radius.toFixed(1) + '" fill="' + color + '"' + verdict + '/>'
@@ -1388,7 +1413,15 @@
       if (svg.hasPointerCapture(event.pointerId)) svg.releasePointerCapture(event.pointerId);
       if (wasClick) {
         const node = target && target.closest ? target.closest(".map-node") : null;
-        selectIdea(node ? Number(node.dataset.id) : null);
+        const edge = target && target.closest ? target.closest(".map-edge") : null;
+        if (node) {
+          selectIdea(Number(node.dataset.id));
+        } else if (edge) {
+          const [from, to] = edge.dataset.edge.split("-").map(Number);
+          selectLink(from, to);
+        } else {
+          selectIdea(null);
+        }
       }
     };
     svg.addEventListener("pointerup", stop);
@@ -1405,6 +1438,7 @@
   function selectIdea(id) {
     mapStopEditing();
     mapState.selected = id;
+    mapState.selectedLink = null;
     const svg = document.getElementById("mapSvg");
     if (svg) {
       const neighbors = new Set();
@@ -1413,6 +1447,7 @@
         const [from, to] = line.dataset.edge.split("-").map(Number);
         const on = !id || from === id || to === id;
         line.classList.toggle("dim", !on);
+        line.classList.remove("sel");
         if (on && id) {
           neighbors.add(from);
           neighbors.add(to);
@@ -1427,6 +1462,28 @@
     renderPanel();
   }
 
+  function selectLink(from, to) {
+    mapStopEditing();
+    mapState.selected = null;
+    mapState.selectedLink = { from, to };
+    const svg = document.getElementById("mapSvg");
+    if (svg) {
+      svg.querySelectorAll(".map-edge").forEach((line) => {
+        const [a, b] = line.dataset.edge.split("-").map(Number);
+        const on = (a === from && b === to) || (a === to && b === from);
+        line.classList.toggle("sel", on);
+        line.classList.toggle("dim", !on);
+      });
+      svg.querySelectorAll(".map-node").forEach((group) => {
+        const nodeId = Number(group.dataset.id);
+        const on = nodeId === from || nodeId === to;
+        group.classList.toggle("sel", on);
+        group.classList.toggle("dim", !on);
+      });
+    }
+    renderPanel();
+  }
+
   function mapStopEditing() {
     mapEditing = false;
   }
@@ -1435,6 +1492,10 @@
     const panel = document.getElementById("mapPanel");
     if (!panel) return;
     const state = mapState;
+    if (state.selectedLink) {
+      renderLinkPanel(panel);
+      return;
+    }
     const idea = state.selected
       ? state.graph.ideas.find((item) => Number(item.id) === state.selected)
       : null;
@@ -1523,6 +1584,75 @@
     }
   }
 
+  function renderLinkPanel(panel) {
+    const state = mapState;
+    const pair = state.selectedLink;
+    const link = visibleMap().links.find((item) => {
+      const from = Number(item.from_id);
+      const to = Number(item.to_id);
+      return (from === pair.from && to === pair.to) || (from === pair.to && to === pair.from);
+    });
+    const byId = new Map(state.graph.ideas.map((item) => [Number(item.id), item]));
+    const first = link ? byId.get(Number(link.from_id)) : null;
+    const second = link ? byId.get(Number(link.to_id)) : null;
+    if (!link || !first || !second) {
+      panel.hidden = true;
+      panel.innerHTML = "";
+      return;
+    }
+    const style = LINK_STYLES[link.type] || LINK_STYLES.same;
+    const side = (idea) => '<div class="p-pair">'
+      + '<p class="p-pair-book"><span class="fdot" style="background:'
+      + (state.colorOf.get(idea.book_id) || "var(--book-a)")
+      + ';display:inline-block;vertical-align:middle;margin-right:6px"></span>'
+      + esc(shortText(idea.book_title, 30)) + ' · глава ' + esc(idea.chapter) + '</p>'
+      + '<h3 class="p-pair-idea">' + esc(idea.idea) + '</h3>'
+      + (idea.quote ? '<blockquote class="p-quote"><i>«' + esc(idea.quote) + '»</i></blockquote>' : "")
+      + '</div>';
+    const verdict = link.verdict === "right" || link.verdict === "wrong" ? link.verdict : "";
+    panel.innerHTML = ''
+      + '<button type="button" class="p-close" title="Закрыть">✕</button>'
+      + '<p class="p-kicker" style="color:' + style.color + '">' + style.icon + ' '
+      + esc(LINK_TYPES[link.type] || link.type) + '</p>'
+      + '<p class="p-meta">Уверенность ' + Math.round(Number(link.confidence) * 100)
+      + '% · связь между книгами</p>'
+      + side(first)
+      + '<div class="p-pair-mid" style="color:' + style.color + '">' + style.icon + '</div>'
+      + side(second)
+      + (link.explanation
+        ? '<p class="p-why"><b>Почему связаны:</b> ' + esc(link.explanation) + '</p>'
+        : "")
+      + '<div class="p-actions">'
+      + '<button type="button" class="vbtn right' + (verdict === "right" ? " on" : "")
+      + '" data-link-verdict="right">✓ Верно</button>'
+      + '<button type="button" class="vbtn wrong' + (verdict === "wrong" ? " on" : "")
+      + '" data-link-verdict="wrong">✕ Неверно</button>'
+      + '</div>';
+    panel.hidden = false;
+    panel.querySelector(".p-close").addEventListener("click", () => selectIdea(null));
+    panel.querySelectorAll("[data-link-verdict]").forEach((button) => {
+      button.addEventListener("click", () => saveLinkVerdict(link, button.dataset.linkVerdict));
+    });
+  }
+
+  async function saveLinkVerdict(link, verdict) {
+    const next = link.verdict === verdict ? "" : verdict;
+    try {
+      const data = await api(
+        "api/links/" + Number(link.from_id) + "-" + Number(link.to_id) + "/mark",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ verdict: next }),
+        }
+      );
+      link.verdict = data.verdict;
+      renderPanel();
+    } catch (error) {
+      alert(error.message);
+    }
+  }
+
   async function saveVerdict(ideaId, verdict) {
     const idea = mapState.graph.ideas.find((item) => Number(item.id) === ideaId);
     const next = idea && idea.verdict === verdict ? "" : verdict;
@@ -1570,6 +1700,7 @@
     try {
       const graph = await api(allIdeas ? "api/graph?all=1" : "api/graph");
       const selected = previous.selected;
+      const selectedLink = previous.selectedLink;
       const fresh = makeMapState(graph, allIdeas);
       fresh.bookIds = previous.bookIds;
       fresh.types = previous.types;
@@ -1578,6 +1709,7 @@
       fresh.selected = fresh.graph.ideas.some((idea) => Number(idea.id) === selected)
         ? selected
         : null;
+      fresh.selectedLink = fresh.selected ? null : selectedLink;
       mapState = fresh;
       mapView = { x: 0, y: 0, scale: 1 };
       mapStopEditing();

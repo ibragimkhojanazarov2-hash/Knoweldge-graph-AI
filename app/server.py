@@ -108,6 +108,13 @@ def init_db() -> None:
                 verdict TEXT NOT NULL,
                 updated TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS link_marks (
+                from_id INTEGER NOT NULL,
+                to_id INTEGER NOT NULL,
+                verdict TEXT NOT NULL,
+                updated TEXT NOT NULL,
+                PRIMARY KEY (from_id, to_id)
+            );
             """
         )
         # Короткий заголовок идеи для карты (3–6 слов), его пишет app/titles.py.
@@ -323,7 +330,11 @@ def get_graph(all_ideas: bool = False) -> dict:
             + where + " ORDER BY i.id"
         ).fetchall()]
         links = [dict(row) for row in db.execute(
-            "SELECT from_id, to_id, type, explanation, confidence FROM links ORDER BY id"
+            "SELECT l.from_id, l.to_id, l.type, l.explanation, l.confidence,"
+            " COALESCE(m.verdict, '') AS verdict"
+            " FROM links l"
+            " LEFT JOIN link_marks m ON m.from_id = l.from_id AND m.to_id = l.to_id"
+            " ORDER BY l.id"
         ).fetchall()]
     return {"books": books, "ideas": ideas, "links": links}
 
@@ -342,6 +353,29 @@ def set_verdict(idea_id: int, verdict: str) -> None:
             " updated = excluded.updated",
             (idea_id, verdict, updated),
         )
+
+
+def set_link_verdict(from_id: int, to_id: int, verdict: str) -> bool:
+    """Оценка связи читателем. False — такой связи нет."""
+    with connect() as db:
+        found = db.execute(
+            "SELECT 1 FROM links WHERE from_id = ? AND to_id = ?", (from_id, to_id)
+        ).fetchone()
+        if found is None:
+            return False
+        if not verdict:
+            db.execute(
+                "DELETE FROM link_marks WHERE from_id = ? AND to_id = ?", (from_id, to_id)
+            )
+            return True
+        updated = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        db.execute(
+            "INSERT INTO link_marks (from_id, to_id, verdict, updated) VALUES (?, ?, ?, ?)"
+            " ON CONFLICT(from_id, to_id) DO UPDATE SET verdict = excluded.verdict,"
+            " updated = excluded.updated",
+            (from_id, to_id, verdict, updated),
+        )
+    return True
 
 
 def edit_idea(idea_id: int, text: str) -> None:
@@ -469,6 +503,11 @@ class Handler(BaseHTTPRequestHandler):
             self.save_edit(int(edit_route.group(1)))
             return
 
+        link_mark = re.fullmatch(r"/api/links/(\d+)-(\d+)/mark", path)
+        if link_mark:
+            self.save_link_mark(int(link_mark.group(1)), int(link_mark.group(2)))
+            return
+
         if path != "/api/upload":
             self.send_error_text(404, "Нет такой страницы.")
             return
@@ -537,6 +576,20 @@ class Handler(BaseHTTPRequestHandler):
             self.send_error_text(400, "Оценка должна быть right, wrong или пустой.")
             return
         set_verdict(idea_id, verdict)
+        self.send_json({"ok": True, "verdict": verdict})
+
+    def save_link_mark(self, from_id: int, to_id: int) -> None:
+        """Оценка связи: {"verdict": "right" | "wrong" | ""}."""
+        data = self.read_json_body("Пустой запрос.")
+        if data is None:
+            return
+        verdict = str(data.get("verdict") or "").strip().lower()
+        if verdict not in ("", "right", "wrong"):
+            self.send_error_text(400, "Оценка должна быть right, wrong или пустой.")
+            return
+        if not set_link_verdict(from_id, to_id, verdict):
+            self.send_error_text(404, "Связь не найдена.")
+            return
         self.send_json({"ok": True, "verdict": verdict})
 
     def save_edit(self, idea_id: int) -> None:
