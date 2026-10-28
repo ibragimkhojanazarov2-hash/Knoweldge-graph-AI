@@ -331,6 +331,12 @@
   .map-tools label { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-muted); padding: 0 6px; cursor: pointer; }
   #filtersBtn { display: none; }
   .map-edge { fill: none; }
+  .map-edge-badge { fill: var(--bg); stroke-width: 1.5; }
+  .map-edge-icon {
+    font-family: var(--sans); font-size: 11px; text-anchor: middle;
+    dominant-baseline: central; paint-order: stroke; stroke: var(--bg);
+    stroke-width: 2px; pointer-events: none;
+  }
   .map-node { cursor: pointer; }
   .map-node circle { stroke: var(--surface); stroke-width: 1.5; transition: opacity .15s; }
   .map-node.sel circle { stroke: var(--ink); stroke-width: 2.5; }
@@ -846,12 +852,18 @@
 
   // --- карта идей ---
   const LINK_STYLES = {
-    supports: { color: "var(--supports)", dash: "", width: 2 },
-    contradicts: { color: "var(--contradicts)", dash: "7 5", width: 2 },
-    extends: { color: "var(--extends)", dash: "", width: 1.6 },
-    example: { color: "var(--example)", dash: "1 4", width: 2.2 },
-    same: { color: "var(--same)", dash: "2 5", width: 1.6 },
+    supports: { color: "var(--supports)", dash: "", icon: "✓" },
+    contradicts: { color: "var(--contradicts)", dash: "7 5", icon: "⚔" },
+    extends: { color: "var(--extends)", dash: "", icon: "➕" },
+    example: { color: "var(--example)", dash: "1 4", icon: "📌" },
+    same: { color: "var(--same)", dash: "2 5", icon: "=" },
   };
+
+  // Толщина линии — уверенность связи: 0.6 тонкая, 0.95 толстая.
+  function edgeWidth(confidence) {
+    const t = Math.max(0, Math.min(1, (Number(confidence) - 0.6) / 0.35));
+    return (1.2 + t * 3.6).toFixed(2);
+  }
   const BOOK_VARS = ["--book-a", "--book-b", "--book-c", "--book-d", "--book-e", "--book-f"];
   // Карта рисуется в пикселях холста: так подписи остаются настоящего
   // размера (14px) при любом экране, а не уменьшаются вместе с картинкой.
@@ -1047,14 +1059,6 @@
     return clean.length > limit ? clean.slice(0, limit).trimEnd() + "…" : clean;
   }
 
-  function markersMarkup() {
-    return Object.keys(LINK_STYLES).map((type) => (
-      '<marker id="arrow-' + type + '" viewBox="0 0 10 10" refX="9" refY="5"'
-      + ' markerWidth="5" markerHeight="5" orient="auto-start-reverse">'
-      + '<path d="M 0 0 L 10 5 L 0 10 z" fill="' + LINK_STYLES[type].color + '"/></marker>'
-    )).join("");
-  }
-
   function filtersMarkup(ideas, links) {
     const state = mapState;
     // Числа в фильтрах — про то, что сейчас на карте: идей у книги и связей
@@ -1147,6 +1151,11 @@
         if (to === selected) neighbors.add(from);
       });
     }
+    // Значок типа стоит в середине дуги. Но связи сходятся к середине зазора,
+    // и значки наезжали друг на друга: поэтому для каждой дуги пробуем
+    // середину, а если место занято — точки вдоль дуги ближе к концам.
+    const BADGE_T = [0.5, 0.4, 0.6, 0.3, 0.7, 0.24, 0.76, 0.18, 0.82];
+    const placed = [];
     const edgeParts = [];
     links.forEach((link) => {
       const from = Number(link.from_id);
@@ -1165,15 +1174,33 @@
       const x2 = b.x - sign * r2;
       const c1 = x1 + (x2 - x1) * 0.42;
       const c2 = x2 - (x2 - x1) * 0.42;
+      let spot = null;
+      for (const t of BADGE_T) {
+        const u = 1 - t;
+        const x = u * u * u * x1 + 3 * u * u * t * c1 + 3 * u * t * t * c2 + t * t * t * x2;
+        const y = a.y + (b.y - a.y) * (3 * t * t - 2 * t * t * t);
+        if (placed.every((p) => Math.hypot(p.x - x, p.y - y) >= 20)) {
+          spot = { x, y };
+          break;
+        }
+      }
+      if (!spot) spot = { x: (x1 + x2) / 2, y: (a.y + b.y) / 2 };
+      placed.push(spot);
       edgeParts.push(
-        '<path class="map-edge' + (dim ? " dim" : "") + '" data-edge="' + from + "-" + to + '"'
-        + ' d="M' + x1.toFixed(1) + " " + a.y.toFixed(1)
+        '<g class="map-edge' + (dim ? " dim" : "") + '" data-edge="' + from + "-" + to + '"'
+        + ' data-conf="' + link.confidence + '">'
+        + '<path d="M' + x1.toFixed(1) + " " + a.y.toFixed(1)
         + " C" + c1.toFixed(1) + " " + a.y.toFixed(1)
         + ", " + c2.toFixed(1) + " " + b.y.toFixed(1)
         + ", " + x2.toFixed(1) + " " + b.y.toFixed(1) + '"'
-        + ' stroke="' + style.color + '" stroke-width="' + style.width + '"'
+        + ' stroke="' + style.color + '" stroke-width="' + edgeWidth(link.confidence) + '"'
         + (style.dash ? ' stroke-dasharray="' + style.dash + '"' : "")
-        + ' marker-end="url(#arrow-' + link.type + ')" opacity=".8"/>'
+        + ' opacity=".8"/>'
+        + '<circle class="map-edge-badge" cx="' + spot.x.toFixed(1) + '" cy="' + spot.y.toFixed(1)
+        + '" r="8.5" stroke="' + style.color + '"/>'
+        + '<text class="map-edge-icon" x="' + spot.x.toFixed(1) + '" y="' + spot.y.toFixed(1)
+        + '" fill="' + style.color + '">' + style.icon + '</text>'
+        + '</g>'
       );
     });
     const nodeParts = ideas.map((idea) => {
@@ -1210,7 +1237,6 @@
       + '<aside class="map-filters" id="mapFilters">' + filtersMarkup(ideas, links) + '</aside>'
       + '<div class="map-canvas" id="mapCanvas">'
       + '<svg id="mapSvg" preserveAspectRatio="xMidYMin meet" role="img" aria-label="Карта идей">'
-      + '<defs>' + markersMarkup() + '</defs>'
       + '<g id="mapWorld"></g>'
       + '</svg>'
       + '<div class="map-tools">'
