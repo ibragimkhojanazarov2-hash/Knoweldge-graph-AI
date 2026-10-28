@@ -309,10 +309,10 @@
   .fvalue { color: var(--ink-muted); font-size: 12px; display: flex; justify-content: space-between; }
   .fnote { color: var(--ink-muted); font-size: 12px; line-height: 1.4; }
   .map-canvas { position: relative; overflow: hidden; background: var(--bg); min-width: 0; }
-  #mapSvg { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; }
+  #mapSvg { display: block; width: 100%; height: auto; touch-action: none; cursor: grab; }
   #mapSvg.panning { cursor: grabbing; }
   .map-tools {
-    position: absolute; left: 14px; top: 14px; z-index: 3;
+    position: absolute; left: 14px; bottom: 14px; z-index: 3;
     display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
     padding: 6px; border-radius: 12px;
     background: color-mix(in srgb, var(--surface) 92%, transparent);
@@ -335,11 +335,17 @@
   .map-node circle { stroke: var(--surface); stroke-width: 1.5; transition: opacity .15s; }
   .map-node.sel circle { stroke: var(--ink); stroke-width: 2.5; }
   .map-node text {
-    font-family: var(--sans); font-size: 10px; fill: var(--ink-muted);
+    font-family: var(--sans); font-size: 14px; fill: var(--ink);
+    paint-order: stroke; stroke: var(--bg); stroke-width: 3px; stroke-linejoin: round;
     pointer-events: none;
   }
-  .map-node.sel text { fill: var(--ink); }
+  .map-node.sel text { font-weight: 600; }
   .map-edge.dim, .map-node.dim { opacity: .12; }
+  .map-head-title {
+    font-family: var(--serif); font-size: 16px; fill: var(--ink);
+  }
+  .map-head-count { font-size: 11px; fill: var(--ink-muted); }
+  .map-head-initial { font-family: var(--serif); font-size: 24px; fill: var(--ink); }
   .map-empty {
     position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
     text-align: center; padding: 32px; color: var(--ink-muted); font-size: 14px;
@@ -847,122 +853,103 @@
     same: { color: "var(--same)", dash: "2 5", width: 1.6 },
   };
   const BOOK_VARS = ["--book-a", "--book-b", "--book-c", "--book-d", "--book-e", "--book-f"];
-  const MAP_W = 1000;
-  const MAP_H = 720;
+  // Карта рисуется в пикселях холста: так подписи остаются настоящего
+  // размера (14px) при любом экране, а не уменьшаются вместе с картинкой.
+  let mapSize = { w: 1000, h: 720 };
+
+  const MAP_MARGIN = 18;  // поля по краям карты
+  const COL_GAP = 170;    // место между колонками книг — там идут дуги
+  const HEAD_H = 108;     // обложка и название книги над колонкой
 
   let mapState = null;  // данные карты и настройки фильтров
   let mapView = { x: 0, y: 0, scale: 1 };
   let mapEditing = false;
   let mapDrag = null;
   let mapMoved = 0;
+  let mapResizeBound = false;
 
-  function seeded(seed) {
-    let value = seed >>> 0;
-    return () => {
-      value = (value * 1664525 + 1013904223) >>> 0;
-      return value / 4294967296;
+  /** Порядок идей внутри колонки: у связанных идей похожая высота. */
+  function orderColumns(ideas, links, bookIds) {
+    const byId = new Map(ideas.map((idea) => [Number(idea.id), idea]));
+    const partners = new Map(ideas.map((idea) => [Number(idea.id), []]));
+    links.forEach((link) => {
+      const from = Number(link.from_id);
+      const to = Number(link.to_id);
+      if (partners.has(from)) partners.get(from).push(to);
+      if (partners.has(to)) partners.get(to).push(from);
+    });
+    const order = new Map(bookIds.map((bookId) => [
+      bookId,
+      ideas.filter((idea) => idea.book_id === bookId).slice()
+        .sort((a, b) => Number(a.id) - Number(b.id)),
+    ]));
+    const rank = new Map();
+    const rerank = () => {
+      order.forEach((list) => list.forEach((idea, index) => {
+        rank.set(Number(idea.id), list.length > 1 ? index / (list.length - 1) : 0.5);
+      }));
     };
+    rerank();
+    for (let pass = 0; pass < 6; pass += 1) {
+      order.forEach((list, bookId) => {
+        const scored = list.map((idea, index) => {
+          const own = rank.get(Number(idea.id));
+          const others = (partners.get(Number(idea.id)) || []).filter((id) => {
+            const other = byId.get(id);
+            return other && other.book_id !== bookId;
+          });
+          const mean = others.length
+            ? others.reduce((sum, id) => sum + (rank.get(id) ?? own), 0) / others.length
+            : own;
+          return { idea, index, score: mean * 0.75 + own * 0.25 };
+        });
+        scored.sort((a, b) => a.score - b.score || a.index - b.index);
+        order.set(bookId, scored.map((item) => item.idea));
+      });
+      rerank();
+    }
+    return order;
   }
 
-  function layoutIdeas(ideas, links) {
-    const random = seeded(20261028);
-    const books = [...new Set(ideas.map((idea) => idea.book_id))];
-    const centers = new Map();
-    books.forEach((bookId, index) => {
-      const angle = (index / books.length) * Math.PI * 2;
-      const radius = books.length === 1 ? 0 : Math.min(MAP_W, MAP_H) * 0.26;
-      centers.set(bookId, {
-        x: MAP_W / 2 + Math.cos(angle) * radius,
-        y: MAP_H / 2 + Math.sin(angle) * radius,
-      });
-    });
-    const nodes = ideas.map((idea) => {
-      const center = centers.get(idea.book_id);
-      return {
-        id: Number(idea.id),
-        book_id: idea.book_id,
-        x: center.x + (random() - 0.5) * (books.length > 1 ? 190 : 280),
-        y: center.y + (random() - 0.5) * (books.length > 1 ? 380 : 220),
-        vx: 0,
-        vy: 0,
-      };
-    });
-    const index = new Map(nodes.map((node, i) => [node.id, i]));
-    const edges = links
-      .map((link) => [index.get(Number(link.from_id)), index.get(Number(link.to_id))])
-      .filter(([a, b]) => a !== undefined && b !== undefined);
-    const k = Math.sqrt((MAP_W * MAP_H) / Math.max(nodes.length, 1)) * 0.8;
-    for (let step = 0; step < 260; step += 1) {
-      const heat = 1 - step / 260;
-      for (let i = 0; i < nodes.length; i += 1) {
-        const a = nodes[i];
-        for (let j = i + 1; j < nodes.length; j += 1) {
-          const b = nodes[j];
-          let dx = a.x - b.x;
-          let dy = a.y - b.y;
-          let dist = Math.hypot(dx, dy);
-          if (dist < 0.5) {
-            dx = random() - 0.5;
-            dy = random() - 0.5;
-            dist = 0.5;
-          }
-          const push = (k * k) / dist * 0.3;
-          dx = (dx / dist) * push;
-          dy = (dy / dist) * push;
-          a.vx += dx;
-          a.vy += dy;
-          b.vx -= dx;
-          b.vy -= dy;
-        }
-      }
-      edges.forEach(([ai, bi]) => {
-        const a = nodes[ai];
-        const b = nodes[bi];
-        const dx = b.x - a.x;
-        const dy = b.y - a.y;
-        const dist = Math.hypot(dx, dy) || 1;
-        const pull = (dist - 72) * 0.0035;
-        a.vx += (dx / dist) * pull;
-        a.vy += (dy / dist) * pull;
-        b.vx -= (dx / dist) * pull;
-        b.vy -= (dy / dist) * pull;
-      });
-      nodes.forEach((node) => {
-        const center = centers.get(node.book_id);
-        node.vx += (center.x - node.x) * 0.05;
-        node.vy += (center.y - node.y) * 0.05;
-        const limit = 9 * heat + 1;
-        const speed = Math.hypot(node.vx, node.vy);
-        if (speed > limit) {
-          node.vx = (node.vx / speed) * limit;
-          node.vy = (node.vy / speed) * limit;
-        }
-        node.x += node.vx * 0.7;
-        node.y += node.vy * 0.7;
-        node.vx *= 0.82;
-        node.vy *= 0.82;
-      });
-    }
-    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-    nodes.forEach((node) => {
-      minX = Math.min(minX, node.x);
-      maxX = Math.max(maxX, node.x);
-      minY = Math.min(minY, node.y);
-      maxY = Math.max(maxY, node.y);
-    });
-    const spanX = Math.max(maxX - minX, 1);
-    const spanY = Math.max(maxY - minY, 1);
-    const scale = Math.min((MAP_W - 150) / spanX, (MAP_H - 130) / spanY);
-    const offsetX = (MAP_W - spanX * scale) / 2;
-    const offsetY = (MAP_H - spanY * scale) / 2;
+  /** Колонки книг: идеи друг под другом, подписи сбоку от точки. */
+  function layoutColumns(ideas, links, width, height) {
+    const bookIds = [...new Set(ideas.map((idea) => idea.book_id))];
+    const order = orderColumns(ideas, links, bookIds);
+    const maxRows = Math.max(1, ...bookIds.map((id) => order.get(id).length));
+    const avail = Math.max(120, height - HEAD_H - MAP_MARGIN);
+    // Строка не ниже 22px: подпись 14px иначе налезает на соседнюю.
+    const rowH = Math.max(22, Math.min(74, avail / maxRows));
+    const contentH = Math.max(height, HEAD_H + rowH * maxRows + MAP_MARGIN);
+    const usable = Math.max(240, width - MAP_MARGIN * 2 - COL_GAP * Math.max(0, bookIds.length - 1));
+    const colW = usable / Math.max(bookIds.length, 1);
     const positions = new Map();
-    nodes.forEach((node) => {
-      positions.set(node.id, {
-        x: (node.x - minX) * scale + offsetX,
-        y: (node.y - minY) * scale + offsetY,
+    const columns = [];
+    bookIds.forEach((bookId, index) => {
+      const list = order.get(bookId);
+      const left = MAP_MARGIN + index * (colW + COL_GAP);
+      const center = left + colW / 2;
+      const outward = center < width / 2 - 1 ? -1 : center > width / 2 + 1 ? 1 : 0;
+      const dotX = outward === 0 ? center : center - outward * (colW / 2 - 16);
+      const blockTop = HEAD_H + Math.max(0, (avail - rowH * list.length) / 2);
+      columns.push({
+        bookId, left, center, dotX, outward, top: blockTop, width: colW,
+        titleLimit: Math.max(8, Math.round((colW - 12) / 8.5)),
+      });
+      list.forEach((idea, row) => {
+        const y = blockTop + rowH * (row + 0.5);
+        positions.set(Number(idea.id), {
+          x: dotX, y, row, rowH,
+          labelX: outward === 0 ? dotX : dotX + outward * 14,
+          anchor: outward === 0 ? "middle" : (outward < 0 ? "end" : "start"),
+          below: outward === 0,
+          labelLimit: outward === 0
+            ? Math.max(10, Math.min(44, Math.round((colW - 20) / 7.4)))
+            : Math.max(8, Math.min(34, Math.round((colW - 30) / 7.4))),
+        });
       });
     });
-    return positions;
+    const counts = new Map(bookIds.map((bookId) => [bookId, order.get(bookId).length]));
+    return { positions, columns, counts, rowH, contentH };
   }
 
   function makeMapState(graph, allLoaded) {
@@ -978,7 +965,6 @@
       graph,
       links,
       colorOf,
-      positions: layoutIdeas(graph.ideas, links),
       bookIds: new Set(graph.books.map((book) => book.id)),
       types: new Set(Object.keys(LINK_STYLES)),
       minConf: 0.6,
@@ -1074,7 +1060,31 @@
       + '</div>';
   }
 
-  function mapShapes() {
+  /** Обложка и название книги над колонкой. */
+  function headersMarkup(layout) {
+    const books = new Map(mapState.graph.books.map((book) => [book.id, book]));
+    return layout.columns.map((col) => {
+      const book = books.get(col.bookId) || { id: col.bookId, title: col.bookId, cover: null };
+      const coverW = 44;
+      const coverH = 62;
+      const color = mapState.colorOf.get(col.bookId) || "var(--book-a)";
+      const cover = book.cover
+        ? '<image href="' + esc(pageBase) + 'covers/' + encodeURIComponent(book.cover)
+          + '" x="' + (col.center - coverW / 2).toFixed(1) + '" y="10" width="' + coverW
+          + '" height="' + coverH + '" preserveAspectRatio="xMidYMid meet"/>'
+        : '<rect x="' + (col.center - coverW / 2).toFixed(1) + '" y="10" width="' + coverW
+          + '" height="' + coverH + '" rx="4" fill="' + color + '" opacity=".35"/>'
+          + '<text class="map-head-initial" x="' + col.center.toFixed(1)
+          + '" y="50" text-anchor="middle">' + esc(String(book.title || "?").slice(0, 1)) + '</text>';
+      return '<g class="map-head" data-book="' + esc(col.bookId) + '">' + cover
+        + '<text class="map-head-title" x="' + col.center.toFixed(1) + '" y="95" text-anchor="middle">'
+        + esc(shortText(book.title, col.titleLimit)) + '</text>'
+        + '<text class="map-head-count" x="' + col.center.toFixed(1) + '" y="108" text-anchor="middle">'
+        + layout.counts.get(col.bookId) + ' идей</text></g>';
+    }).join("");
+  }
+
+  function mapShapes(layout) {
     const state = mapState;
     const { ideas, links, degree } = visibleMap();
     const shownIds = new Set(ideas.map((idea) => Number(idea.id)));
@@ -1090,30 +1100,29 @@
       });
     }
     const edgeParts = [];
-    links.forEach((link, edgeIndex) => {
+    links.forEach((link) => {
       const from = Number(link.from_id);
       const to = Number(link.to_id);
-      const a = state.positions.get(from);
-      const b = state.positions.get(to);
+      const a = layout.positions.get(from);
+      const b = layout.positions.get(to);
       if (!a || !b) return;
       const style = LINK_STYLES[link.type] || LINK_STYLES.same;
-      const dx = b.x - a.x;
-      const dy = b.y - a.y;
-      const dist = Math.hypot(dx, dy) || 1;
-      const ux = dx / dist;
-      const uy = dy / dist;
       const r1 = nodeRadius(degree.get(from) || 0) + 1;
-      const r2 = nodeRadius(degree.get(to) || 0) + 5;
+      const r2 = nodeRadius(degree.get(to) || 0) + 2;
       const dim = selected && from !== selected && to !== selected;
-      // Лёгкий изгиб: прямые линии в плотной карте сливаются в кашу.
-      const bend = (edgeIndex % 2 ? 1 : -1) * Math.min(46, dist * 0.16);
-      const mx = (a.x + b.x) / 2 - uy * bend;
-      const my = (a.y + b.y) / 2 + ux * bend;
+      // Дуга выходит из точки горизонтально и так же входит в соседнюю:
+      // между колонками это читается как плавная связь, а не как клубок.
+      const sign = b.x >= a.x ? 1 : -1;
+      const x1 = a.x + sign * r1;
+      const x2 = b.x - sign * r2;
+      const c1 = x1 + (x2 - x1) * 0.42;
+      const c2 = x2 - (x2 - x1) * 0.42;
       edgeParts.push(
         '<path class="map-edge' + (dim ? " dim" : "") + '" data-edge="' + from + "-" + to + '"'
-        + ' d="M' + (a.x + ux * r1).toFixed(1) + " " + (a.y + uy * r1).toFixed(1)
-        + " Q" + mx.toFixed(1) + " " + my.toFixed(1)
-        + " " + (b.x - ux * r2).toFixed(1) + " " + (b.y - uy * r2).toFixed(1) + '"'
+        + ' d="M' + x1.toFixed(1) + " " + a.y.toFixed(1)
+        + " C" + c1.toFixed(1) + " " + a.y.toFixed(1)
+        + ", " + c2.toFixed(1) + " " + b.y.toFixed(1)
+        + ", " + x2.toFixed(1) + " " + b.y.toFixed(1) + '"'
         + ' stroke="' + style.color + '" stroke-width="' + style.width + '"'
         + (style.dash ? ' stroke-dasharray="' + style.dash + '"' : "")
         + ' marker-end="url(#arrow-' + link.type + ')" opacity=".8"/>'
@@ -1121,7 +1130,7 @@
     });
     const nodeParts = ideas.map((idea) => {
       const id = Number(idea.id);
-      const point = state.positions.get(id);
+      const point = layout.positions.get(id);
       if (!point) return "";
       const radius = nodeRadius(degree.get(id) || 0);
       const color = state.colorOf.get(idea.book_id) || "var(--book-a)";
@@ -1131,8 +1140,9 @@
         : "";
       const dim = selected && !neighbors.has(id);
       const label = state.labels
-        ? '<text y="' + (radius + 12) + '" text-anchor="middle">'
-          + esc(shortText(idea.idea, 30)) + '</text>'
+        ? '<text class="map-label" x="' + (point.labelX - point.x).toFixed(1) + '"'
+          + ' y="' + (point.below ? radius + 18 : 5) + '" text-anchor="' + point.anchor + '">'
+          + esc(shortText(idea.title || idea.idea, point.labelLimit)) + '</text>'
         : "";
       return '<g class="map-node' + (id === selected ? " sel" : "") + (dim ? " dim" : "")
         + '" data-id="' + id + '" transform="translate(' + point.x.toFixed(1) + ","
@@ -1151,9 +1161,9 @@
       + '<div class="map-screen' + (open ? " filters-open" : "") + '" id="mapScreen">'
       + '<aside class="map-filters" id="mapFilters">' + filtersMarkup() + '</aside>'
       + '<div class="map-canvas" id="mapCanvas">'
-      + '<svg id="mapSvg" viewBox="0 0 ' + MAP_W + " " + MAP_H + '" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Карта идей">'
+      + '<svg id="mapSvg" preserveAspectRatio="xMidYMin meet" role="img" aria-label="Карта идей">'
       + '<defs>' + markersMarkup() + '</defs>'
-      + '<g id="mapWorld">' + mapShapes() + '</g>'
+      + '<g id="mapWorld"></g>'
       + '</svg>'
       + '<div class="map-tools">'
       + '<button type="button" id="filtersBtn" title="Фильтры">Фильтры</button>'
@@ -1173,9 +1183,40 @@
       count.textContent = "идей " + ideas.length + " · связей " + links.length
         + (state.allLoaded ? " · все идеи" : "");
     }
+
+    // Второй шаг: узнаём размер холста и раскладываем колонки в пикселях.
+    // viewBox равен размеру в пикселях, поэтому подписи 14px видны настоящими.
+    const canvas = document.getElementById("mapCanvas");
+    const svg = document.getElementById("mapSvg");
+    const world = document.getElementById("mapWorld");
+    const rect = canvas.getBoundingClientRect();
+    const width = Math.max(320, Math.round(rect.width));
+    const height = Math.max(320, Math.round(rect.height));
+    const layout = layoutColumns(ideas, links, width, height);
+    mapSize = { w: width, h: layout.contentH };
+    svg.setAttribute("viewBox", "0 0 " + width + " " + layout.contentH);
+    svg.style.height = layout.contentH + "px";
+    world.innerHTML = headersMarkup(layout) + mapShapes(layout);
+
     applyView();
     bindMap();
     renderPanel();
+    bindMapResize();
+  }
+
+  /** Перекладка при повороте экрана или смене размера окна. */
+  function bindMapResize() {
+    if (mapResizeBound) return;
+    mapResizeBound = true;
+    let timer = null;
+    window.addEventListener("resize", () => {
+      if (!document.getElementById("mapCanvas")) return;
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        if (!document.getElementById("mapCanvas")) return;
+        renderMapScreen();
+      }, 150);
+    });
   }
 
   function applyView() {
@@ -1189,8 +1230,8 @@
   function zoomAt(factor) {
     const next = Math.min(3.2, Math.max(0.6, mapView.scale * factor));
     const ratio = next / mapView.scale;
-    mapView.x = MAP_W / 2 - (MAP_W / 2 - mapView.x) * ratio;
-    mapView.y = MAP_H / 2 - (MAP_H / 2 - mapView.y) * ratio;
+    mapView.x = mapSize.w / 2 - (mapSize.w / 2 - mapView.x) * ratio;
+    mapView.y = mapSize.h / 2 - (mapSize.h / 2 - mapView.y) * ratio;
     mapView.scale = next;
     applyView();
   }
@@ -1258,10 +1299,9 @@
       mapMoved += Math.abs(dx) + Math.abs(dy);
       mapDrag.x = event.clientX;
       mapDrag.y = event.clientY;
-      const rect = svg.getBoundingClientRect();
-      const unit = Math.min(rect.width / MAP_W, rect.height / MAP_H) || 1;
-      mapView.x += dx / unit;
-      mapView.y += dy / unit;
+      // viewBox равен размеру svg в пикселях, значит 1 единица = 1 px.
+      mapView.x += dx;
+      mapView.y += dy;
       applyView();
     });
     const stop = (event) => {

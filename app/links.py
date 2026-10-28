@@ -21,7 +21,8 @@ from server import connect, get_book, init_db, list_books
 
 TOP_CANDIDATES = 3   # сколько идей из других книг проверять у одной идеи
 BATCH_IDEAS = 6      # сколько идей-источников в одном запросе
-MIN_CONFIDENCE = 0.6  # ниже — связь не сохраняем
+MIN_CONFIDENCE = 0.75  # ниже — связь не сохраняем
+MAX_LINKS_PER_IDEA = 3  # не больше трёх лучших связей у одной идеи
 
 TYPES = {
     "supports": "поддерживает",
@@ -48,16 +49,22 @@ PROMPT = """Ты ищешь связи между идеями из разных
 
 Для каждой пары «источник-кандидат» реши, есть ли содержательная связь:
 - supports — идея из другой книги подтверждает мысль источника;
-- contradicts — спорит с ней;
+- contradicts — ТОЛЬКО если авторы утверждают противоположное по одному и тому же
+  вопросу: одно утверждает то, что другое отрицает. Разные темы, разный контекст,
+  другой оттенок мысли — это НЕ противоречие;
 - extends — развивает, углубляет её;
 - example — служит примером к ней;
 - same — говорит то же самое.
 Если связи нет, пару не включай.
 
+Будь строгим: связь должна быть очевидной, если прочитать обе идеи рядом.
+Если сомневаешься — пару не включай. Не больше одной связи из каждого источника.
+
 Ответь только JSON-массивом, без другого текста:
 [{{"pair": "S1-C1", "type": "supports", "explanation": "1–2 предложения по-русски", "confidence": 0.8}}]
 
-confidence — от 0 до 1, насколько ты уверен. Включай только пары с уверенностью не ниже 0.6.
+confidence — от 0 до 1, насколько ты уверен. Включай только пары с уверенностью
+не ниже 0.75 (0.9 — связь очевидна, 0.75 — почти наверняка).
 В explanation не упоминай номера S1 и C1 — пиши сразу про сами идеи."""
 
 
@@ -154,6 +161,36 @@ def save_links(book_id: str, links: list[dict]) -> None:
         )
 
 
+def trim_links(max_per_idea: int = MAX_LINKS_PER_IDEA) -> int:
+    """Оставляет лучшие связи: одна пара не дважды, не больше трёх связей у идеи."""
+    with connect() as db:
+        rows = [dict(row) for row in db.execute(
+            "SELECT from_id, to_id, type, explanation, confidence, created FROM links"
+        ).fetchall()]
+        rows.sort(key=lambda link: link["confidence"], reverse=True)
+        unique: dict[tuple[int, int], dict] = {}
+        for link in rows:
+            unique.setdefault(tuple(sorted((link["from_id"], link["to_id"]))), link)
+        kept: list[dict] = []
+        used: dict[int, int] = {}
+        for link in unique.values():
+            ideas = (link["from_id"], link["to_id"])
+            if any(used.get(idea, 0) >= max_per_idea for idea in ideas):
+                continue
+            kept.append(link)
+            for idea in ideas:
+                used[idea] = used.get(idea, 0) + 1
+        db.execute("DELETE FROM links")
+        db.executemany(
+            "INSERT INTO links (from_id, to_id, type, explanation, confidence, created)"
+            " VALUES (?, ?, ?, ?, ?, ?)",
+            [(link["from_id"], link["to_id"], link["type"], link["explanation"],
+              link["confidence"], link["created"]) for link in kept],
+        )
+    print(f"После отбора: {len(kept)} связей (не больше {max_per_idea} у идеи)", flush=True)
+    return len(kept)
+
+
 def load_ideas(book_id: str) -> tuple[list[dict], list[dict]]:
     with connect() as db:
         mine = [dict(row) for row in db.execute(
@@ -215,8 +252,9 @@ def main() -> None:
     for book_id in book_ids:
         print(f"\n[{book_id}]", flush=True)
         total += links_for(book_id)
+    left = trim_links()
     if where == "all":
-        print(f"\nИтого связей: {total}", flush=True)
+        print(f"\nИтого связей: {total}, после отбора: {left}", flush=True)
 
 
 if __name__ == "__main__":
