@@ -539,6 +539,13 @@ class Handler(BaseHTTPRequestHandler):
             self.send_bytes(file.read_bytes(), ctype)
             return
 
+        # Любой другой путь без расширения — это страница приложения (в том числе старый
+        # адрес projects/<папка>/app/index.html): отдаём index.html, а API и обложки — только по своим.
+        if not path.startswith("/api/") and not path.startswith("/covers/") \
+                and posixpath.splitext(path)[1].lower() in ("", ".html"):
+            self.send_bytes(INDEX.read_bytes(), "text/html; charset=utf-8")
+            return
+
         self.send_error_text(404, "Нет такой страницы.")
 
     def do_POST(self) -> None:

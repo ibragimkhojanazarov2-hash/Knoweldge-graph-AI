@@ -784,7 +784,10 @@
   const askLink = document.getElementById("askLink");
   const fileInput = document.getElementById("file");
 
-  const pageBase = location.pathname.endsWith("/") ? location.pathname : location.pathname + "/";
+  // Адрес API — от каталога страницы, без имени файла: /proxy/8000/ или /proxy/8000/index.html
+  // дают один и тот же /proxy/8000/api/... (раньше «index.html/api/books» давал 404).
+  const proxyMatch = location.pathname.match(/^(.*\/proxy\/\d+\/)/);
+  const pageBase = proxyMatch ? proxyMatch[1] : location.pathname.replace(/[^/]*$/, "");
   let chapterView = "text";  // какая вкладка открыта в читалке: текст или идеи
   let bookView = "chapters"; // какая вкладка открыта на странице книги: главы или ключевые идеи
 
