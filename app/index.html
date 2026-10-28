@@ -189,6 +189,16 @@
     color: var(--ink-muted);
   }
   .idea-why { margin: 0; font-size: 13px; color: var(--ink-muted); }
+  .idea-rank {
+    display: flex; align-items: baseline; gap: 10px;
+    margin: 0 0 10px; font-size: 12px; color: var(--ink-muted);
+  }
+  .rank-num { letter-spacing: .08em; font-variant-numeric: tabular-nums; }
+  .idea-chapter {
+    border: 0; background: none; padding: 0;
+    font: inherit; color: var(--accent); cursor: pointer; text-align: left;
+  }
+  .idea-chapter:hover { text-decoration: underline; }
   .section-title { font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-muted); margin: 0 0 6px; }
   @media (max-width: 720px) {
     .top { padding: 12px 18px; }
@@ -218,6 +228,7 @@
 
   const pageBase = location.pathname.endsWith("/") ? location.pathname : location.pathname + "/";
   let chapterView = "text";  // какая вкладка открыта в читалке: текст или идеи
+  let bookView = "chapters"; // какая вкладка открыта на странице книги: главы или ключевые идеи
 
   async function api(path, options) {
     const response = await fetch(pageBase + path, options);
@@ -321,9 +332,12 @@
     app.innerHTML = `<button class="back" type="button" id="backBtn">← Библиотека</button><p class="hint">Открываю книгу…</p>`;
     document.getElementById("backBtn").addEventListener("click", () => { location.hash = ""; });
 
-    let book;
+    let book, keyIdeas;
     try {
-      book = await api("api/books/" + encodeURIComponent(id));
+      [book, keyIdeas] = await Promise.all([
+        api("api/books/" + encodeURIComponent(id)),
+        api("api/books/" + encodeURIComponent(id) + "/key-ideas")
+      ]);
     } catch (error) {
       app.innerHTML = `<button class="back" type="button" id="backBtn">← Библиотека</button>
         <p class="note error">${esc(error.message)}</p>`;
@@ -340,6 +354,20 @@
         </button>
       </li>`).join("");
 
+    const keyMarkup = keyIdeas.length
+      ? `<ul class="ideas">${keyIdeas.map((item) => `
+          <li class="idea">
+            <p class="idea-rank">
+              <span class="rank-num">${String(item.rank).padStart(2, "0")}</span>
+              <button class="idea-chapter" type="button" data-key-chapter="${item.chapter}">Глава ${String(item.chapter).padStart(2, "0")} · ${esc(item.chapter_title)}</button>
+            </p>
+            <p class="idea-text">${esc(item.idea)}</p>
+            <blockquote>${esc(item.quote)}</blockquote>
+            <p class="idea-why">${esc(item.why)}</p>
+          </li>`).join("")}</ul>`
+      : `<div class="empty">Ключевые идеи пока не выбраны.<br>
+          Запустите <code>python3 app/key_ideas.py ${esc(id)}</code>, и они появятся здесь.</div>`;
+
     app.innerHTML = `
       <button class="back" type="button" id="backBtn">← Библиотека</button>
       <section class="book-head">
@@ -354,8 +382,12 @@
           </div>
         </div>
       </section>
-      <h2 class="section-title">Содержание</h2>
-      <ol class="chapters">${chapters}</ol>`;
+      <div class="tabs" role="tablist">
+        <button class="tab" type="button" role="tab" data-book-view="chapters">Главы · ${book.chapter_count}</button>
+        <button class="tab" type="button" role="tab" data-book-view="keys">Ключевые идеи · ${keyIdeas.length}</button>
+      </div>
+      <div class="chapters-pane"><ol class="chapters">${chapters}</ol></div>
+      <div class="keys-pane">${keyMarkup}</div>`;
 
     document.getElementById("backBtn").addEventListener("click", () => { location.hash = ""; });
     app.querySelectorAll("[data-chapter]").forEach((row) => {
@@ -363,6 +395,24 @@
         location.hash = "/book/" + id + "/chapter/" + row.dataset.chapter;
       });
     });
+    app.querySelectorAll("[data-key-chapter]").forEach((button) => {
+      button.addEventListener("click", () => {
+        chapterView = "ideas";
+        location.hash = "/book/" + id + "/chapter/" + button.dataset.keyChapter;
+      });
+    });
+
+    const chaptersPane = app.querySelector(".chapters-pane");
+    const keysPane = app.querySelector(".keys-pane");
+    const bookTabs = app.querySelectorAll("[data-book-view]");
+    function setBookView(view) {
+      bookView = view;
+      bookTabs.forEach((tab) => tab.setAttribute("aria-selected", String(tab.dataset.bookView === view)));
+      chaptersPane.hidden = view !== "chapters";
+      keysPane.hidden = view !== "keys";
+    }
+    bookTabs.forEach((tab) => tab.addEventListener("click", () => setBookView(tab.dataset.bookView)));
+    setBookView(bookView);
   }
 
   async function showChapter(id, idx) {

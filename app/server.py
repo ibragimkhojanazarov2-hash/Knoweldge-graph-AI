@@ -66,6 +66,16 @@ def init_db() -> None:
                 why TEXT NOT NULL,
                 created TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS key_ideas (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                book_id TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+                rank INTEGER NOT NULL,
+                chapter INTEGER NOT NULL,
+                idea TEXT NOT NULL,
+                quote TEXT NOT NULL,
+                why TEXT NOT NULL,
+                created TEXT NOT NULL
+            );
             """
         )
 
@@ -177,6 +187,27 @@ def get_ideas(book_id: str, chapter: int) -> list[dict]:
     return [dict(row) for row in rows]
 
 
+def get_all_ideas(book_id: str) -> list[dict]:
+    """Все идеи книги по порядку глав — из них выбираются ключевые."""
+    with connect() as db:
+        rows = db.execute(
+            "SELECT chapter, idea, quote, why FROM ideas"
+            " WHERE book_id = ? ORDER BY chapter, id", (book_id,)
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def get_key_ideas(book_id: str) -> list[dict]:
+    with connect() as db:
+        rows = db.execute(
+            "SELECT k.rank, k.chapter, c.title AS chapter_title, k.idea, k.quote, k.why"
+            " FROM key_ideas k"
+            " JOIN chapters c ON c.book_id = k.book_id AND c.idx = k.chapter"
+            " WHERE k.book_id = ? ORDER BY k.rank", (book_id,)
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
 def strip_prefix(path: str) -> str:
     """Убирает /proxy/8000 из пути: страница живёт под этим префиксом."""
     parts = path.split("/")
@@ -215,6 +246,12 @@ class Handler(BaseHTTPRequestHandler):
                     self.send_error_text(404, "Глава не найдена.")
                     return
                 self.send_json(get_ideas(parts[0], int(parts[2])))
+                return
+            if len(parts) == 2 and parts[1] == "key-ideas":
+                if get_book(parts[0]) is None:
+                    self.send_error_text(404, "Книга не найдена.")
+                    return
+                self.send_json(get_key_ideas(parts[0]))
                 return
             if len(parts) == 1 and parts[0]:
                 book = get_book(parts[0])
