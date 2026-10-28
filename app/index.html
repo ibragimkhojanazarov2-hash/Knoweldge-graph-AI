@@ -958,6 +958,7 @@
   const MAP_MARGIN = 18;  // поля по краям карты
   const COL_GAP = 170;    // место между колонками книг — там идут дуги
   const HEAD_H = 108;     // обложка и название книги над колонкой
+  const STRONG_CONF = 0.85;  // «только сильные связи»: явная связь и выше
 
   let mapState = null;  // данные карты и настройки фильтров
   let mapView = { x: 0, y: 0, scale: 1 };
@@ -1100,7 +1101,7 @@
       colorOf,
       bookIds: new Set(graph.books.map((book) => book.id)),
       types: new Set(Object.keys(LINK_STYLES)),
-      minConf: 0.6,
+      strongOnly: false,
       labels: graph.ideas.length <= 60,
       allLoaded: Boolean(allLoaded),
       loading: false,
@@ -1116,7 +1117,7 @@
     const links = state.links.filter(
       (link) =>
         state.types.has(link.type) &&
-        Number(link.confidence) >= state.minConf &&
+        (!state.strongOnly || Number(link.confidence) >= STRONG_CONF) &&
         ideaIds.has(Number(link.from_id)) &&
         ideaIds.has(Number(link.to_id))
     );
@@ -1130,7 +1131,7 @@
     // Сузили типы или уверенность — идеи без видимой связи с карты уходят.
     // Выбор книг и «Показать все идеи» оставляют идеи на месте: у одной книги
     // межкнижных связей нет, и пустая карта тут ничего не объясняет.
-    const narrowed = state.types.size < Object.keys(LINK_STYLES).length || state.minConf > 0.6;
+    const narrowed = state.types.size < Object.keys(LINK_STYLES).length || state.strongOnly;
     const shown = !state.allLoaded && narrowed
       ? ideas.filter((idea) => degree.has(Number(idea.id)))
       : ideas;
@@ -1157,7 +1158,7 @@
     const bookOf = new Map(state.graph.ideas.map((idea) => [Number(idea.id), idea.book_id]));
     const typeCount = new Map();
     state.links.forEach((link) => {
-      if (Number(link.confidence) < state.minConf) return;
+      if (state.strongOnly && Number(link.confidence) < STRONG_CONF) return;
       if (!state.bookIds.has(bookOf.get(Number(link.from_id)))) return;
       if (!state.bookIds.has(bookOf.get(Number(link.to_id)))) return;
       typeCount.set(link.type, (typeCount.get(link.type) || 0) + 1);
@@ -1179,16 +1180,16 @@
         + '<span>' + LINK_TYPES[type] + '</span>'
         + '<span class="fcount">' + (typeCount.get(type) || 0) + '</span></label>';
     }).join("");
-    const percent = Math.round(state.minConf * 100);
     return ''
       + '<h2>Карта идей</h2>'
       + '<p class="count" id="mapCount"></p>'
       + '<div class="fgroup"><p class="fgroup-title">Книги</p>' + bookRows + '</div>'
       + '<div class="fgroup"><p class="fgroup-title">Типы связей</p>' + typeRows + '</div>'
-      + '<div class="fgroup"><p class="fgroup-title">Уверенность связи</p>'
-      + '<input type="range" class="frange" id="confRange" min="0.5" max="0.9" step="0.05" value="'
-      + state.minConf + '">'
-      + '<div class="fvalue"><span>50%</span><span id="confValue">не ниже ' + percent + '%</span><span>90%</span></div>'
+      + '<div class="fgroup"><label class="frow"><input type="checkbox" id="strongOnly"'
+      + (state.strongOnly ? " checked" : "")
+      + '><span>Только сильные связи</span><span class="fcount">≥ '
+      + Math.round(STRONG_CONF * 100) + '%</span></label>'
+      + '<p class="fnote">Слабая тематическая перекличка остаётся за пределами карты.</p>'
       + '</div>'
       + '<div class="fgroup"><label class="frow"><input type="checkbox" id="allIdeas"'
       + (state.allLoaded ? " checked" : "") + (state.loading ? " disabled" : "")
@@ -1444,13 +1445,8 @@
         renderMapScreen();
       });
     });
-    const range = document.getElementById("confRange");
-    range.addEventListener("input", () => {
-      document.getElementById("confValue").textContent =
-        "не ниже " + Math.round(Number(range.value) * 100) + "%";
-    });
-    range.addEventListener("change", () => {
-      mapState.minConf = Number(range.value);
+    document.getElementById("strongOnly").addEventListener("change", (event) => {
+      mapState.strongOnly = event.target.checked;
       mapStopEditing();
       renderMapScreen();
     });
@@ -1777,7 +1773,7 @@
       const fresh = makeMapState(graph, allIdeas);
       fresh.bookIds = previous.bookIds;
       fresh.types = previous.types;
-      fresh.minConf = previous.minConf;
+      fresh.strongOnly = previous.strongOnly;
       fresh.labels = previous.labels;
       fresh.selected = fresh.graph.ideas.some((idea) => Number(idea.id) === selected)
         ? selected
@@ -1952,7 +1948,7 @@
       const idea = byId.get(Number(id));
       if (idea) mapState.bookIds.add(idea.book_id);
     });
-    if (Number(link.confidence) < mapState.minConf) mapState.minConf = Number(link.confidence);
+    if (Number(link.confidence) < STRONG_CONF) mapState.strongOnly = false;
     renderMapScreen();
     selectLink(pair.from, pair.to);
   }
