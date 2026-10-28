@@ -110,6 +110,10 @@ def init_db() -> None:
             );
             """
         )
+        # Короткий заголовок идеи для карты (3–6 слов), его пишет app/titles.py.
+        columns = {row["name"] for row in db.execute("PRAGMA table_info(ideas)")}
+        if "title" not in columns:
+            db.execute("ALTER TABLE ideas ADD COLUMN title TEXT NOT NULL DEFAULT ''")
 
 
 def read_txt(body: bytes, filename: str) -> dict:
@@ -312,7 +316,7 @@ def get_graph(all_ideas: bool = False) -> dict:
         ).fetchall()]
         ideas = [dict(row) for row in db.execute(
             "SELECT i.id, i.book_id, b.title AS book_title, i.chapter, i.idea, i.quote, i.why,"
-            " COALESCE(m.verdict, '') AS verdict"
+            " i.title, COALESCE(m.verdict, '') AS verdict"
             " FROM ideas i"
             " JOIN books b ON b.id = i.book_id"
             " LEFT JOIN idea_marks m ON m.idea_id = i.id"
