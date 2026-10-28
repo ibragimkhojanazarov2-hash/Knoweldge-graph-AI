@@ -117,6 +117,14 @@ def init_db() -> None:
                 updated TEXT NOT NULL,
                 PRIMARY KEY (from_id, to_id)
             );
+            CREATE TABLE IF NOT EXISTS debates (
+                book_a TEXT NOT NULL,
+                book_b TEXT NOT NULL,
+                groups TEXT NOT NULL,
+                verdict TEXT NOT NULL,
+                created TEXT NOT NULL,
+                PRIMARY KEY (book_a, book_b)
+            );
             """
         )
         # Короткий заголовок идеи для карты (3–6 слов), его пишет app/titles.py.
@@ -473,6 +481,15 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json(idea)
                 return
 
+        if path.startswith("/api/debate/"):
+            rest = path[len("/api/debate/"):].rstrip("/")
+            parts = rest.split("/")
+            if len(parts) == 2 and all(parts):
+                self.debate(parts[0], parts[1], refresh=False)
+                return
+            self.send_error_text(404, "Нет такой страницы.")
+            return
+
         if path.startswith("/api/books/"):
             rest = path[len("/api/books/"):].rstrip("/")
             parts = rest.split("/")
@@ -551,6 +568,11 @@ class Handler(BaseHTTPRequestHandler):
             self.ask_library()
             return
 
+        debate_route = re.fullmatch(r"/api/debate/([^/]+)/([^/]+)/refresh", path)
+        if debate_route:
+            self.debate(debate_route.group(1), debate_route.group(2), refresh=True)
+            return
+
         if path != "/api/upload":
             self.send_error_text(404, "Нет такой страницы.")
             return
@@ -607,6 +629,22 @@ class Handler(BaseHTTPRequestHandler):
             result = answer_question(question)
         except (RuntimeError, OSError) as exc:
             self.send_error_text(502, str(exc) or "Модель не ответила, попробуйте ещё раз.")
+            return
+        self.send_json(result)
+
+    def debate(self, book_a: str, book_b: str, refresh: bool) -> None:
+        """Сравнение двух книг: что общее, в чём спорят, чем каждая особенная."""
+        if book_a == book_b:
+            self.send_error_text(400, "Выберите две разные книги.")
+            return
+        from debate import get_debate              # debate берёт connect из этого модуля
+        try:
+            result = get_debate(book_a, book_b, refresh=refresh)
+        except (RuntimeError, OSError) as exc:
+            self.send_error_text(502, str(exc) or "Модель не ответила, попробуйте ещё раз.")
+            return
+        if result is None:
+            self.send_error_text(404, "Книга не найдена.")
             return
         self.send_json(result)
 

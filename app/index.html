@@ -637,7 +637,92 @@
     .ask-answer { padding: 18px; }
     .ask-answer p { font-size: 17px; }
   }
-  /* Четыре пункта меню на узком телефоне не помещаются вместе с логотипом. */
+  /* Спор авторов: две книги, три колонки и резюме модели. */
+  .debate { max-width: 1100px; margin: 0 auto; }
+  .debate .lead { margin-bottom: 22px; }
+  .debate-pick {
+    display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px;
+    padding-bottom: 18px; border-bottom: 1px solid var(--line);
+  }
+  .debate-pick label {
+    display: flex; flex: 1 1 230px; flex-direction: column; gap: 6px; min-width: 0;
+  }
+  .debate-pick label span {
+    color: var(--ink-muted); font-family: var(--sans); font-size: 11px;
+    letter-spacing: .1em; text-transform: uppercase;
+  }
+  .debate-pick select {
+    width: 100%; padding: 10px 12px; cursor: pointer;
+    border: 1px solid var(--line); border-radius: 10px;
+    background: var(--surface); color: var(--ink);
+    font: inherit; font-size: 14px;
+  }
+  .debate-pick select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  .debate-pick .btn { flex: none; }
+  .debate-status { margin: 16px 0 0; color: var(--ink-muted); font-size: 13px; }
+  .debate-status:empty { display: none; }
+  .debate-grid {
+    display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 18px; align-items: start; margin-top: 26px;
+  }
+  .debate-col { min-width: 0; }
+  .debate-cards { display: flex; flex-direction: column; gap: 12px; }
+  .debate-card {
+    padding: 14px 16px;
+    border: 1px solid var(--line); border-radius: 14px; background: var(--surface);
+  }
+  .debate-meta {
+    display: flex; align-items: center; gap: 7px; margin-bottom: 10px;
+    font-family: var(--sans); font-size: 11px; letter-spacing: .06em; text-transform: uppercase;
+  }
+  .debate-conf {
+    margin-left: auto; color: var(--ink-muted);
+    font-variant-numeric: tabular-nums; letter-spacing: 0;
+  }
+  .debate-card .bridge-book { font-size: 11px; }
+  .debate-card .bridge-quote { padding: 8px 10px; font-size: 13px; }
+  .debate-card .bridge-book + .bridge-quote + .bridge-book { margin-top: 12px; }
+  .debate-title {
+    margin: 0; font-family: var(--serif); font-size: 16px;
+    font-weight: 400; line-height: 1.35;
+  }
+  .debate-title + .bridge-quote { margin-top: 9px; }
+  .debate-why { margin: 11px 0 0; color: var(--ink-muted); font-size: 12px; line-height: 1.5; }
+  .debate-open { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 11px; font-size: 12px; }
+  .debate-open a { color: var(--accent); text-decoration: none; }
+  .debate-open a:hover { text-decoration: underline; }
+  .debate-sub {
+    margin: 18px 0 9px; color: var(--ink-muted);
+    font-family: var(--sans); font-size: 11px; letter-spacing: .08em; text-transform: uppercase;
+  }
+  .debate-sub:first-of-type { margin-top: 0; }
+  .debate-verdict {
+    margin-top: 34px; padding: 22px 24px;
+    border: 1px solid var(--line); border-radius: 16px; background: var(--surface);
+  }
+  .debate-verdict h2 {
+    margin: 0 0 12px; color: var(--ink-muted);
+    font-family: var(--sans); font-size: 11px; font-weight: 500;
+    letter-spacing: .1em; text-transform: uppercase;
+  }
+  .debate-verdict p { margin: 0; font-family: var(--serif); font-size: 18px; line-height: 1.6; }
+  .debate-verdict-foot {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 12px;
+    margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line);
+  }
+  .debate-verdict-foot .hint { margin: 0; }
+  .debate-verdict-foot .btn { margin-left: auto; }
+  @media (max-width: 900px) {
+    .debate-grid { grid-template-columns: 1fr; gap: 30px; }
+  }
+  @media (max-width: 560px) {
+    .debate-pick label { flex-basis: 100%; }
+    .debate-pick .btn { justify-content: center; }
+    .debate-verdict { padding: 18px; }
+    .debate-verdict p { font-size: 17px; }
+    .debate-verdict-foot .btn { margin-left: 0; }
+  }
+  /* Пять пунктов меню на узком телефоне не помещаются вместе с логотипом. */
   @media (max-width: 480px) {
     .brand { display: none; }
   }
@@ -680,6 +765,7 @@
     <a class="nav-link" id="libLink" href="#/">Библиотека</a>
     <a class="nav-link" id="mapLink" href="#/map">Карта</a>
     <a class="nav-link" id="bridgesLink" href="#/bridges">Мосты</a>
+    <a class="nav-link" id="debateLink" href="#/debate">Спор</a>
     <a class="nav-link" id="askLink" href="#/ask">Спросить</a>
     <button class="icon-btn" id="themeBtn" type="button" title="Светлая или тёмная тема">◐</button>
   </div>
@@ -694,6 +780,7 @@
   const libLink = document.getElementById("libLink");
   const mapLink = document.getElementById("mapLink");
   const bridgesLink = document.getElementById("bridgesLink");
+  const debateLink = document.getElementById("debateLink");
   const askLink = document.getElementById("askLink");
   const fileInput = document.getElementById("file");
 
@@ -2187,6 +2274,7 @@
   async function showBridges() {
     app.classList.remove("map-main");
     mapLink.classList.remove("active");
+    debateLink.classList.remove("active");
     libLink.classList.remove("active");
     bridgesLink.classList.add("active");
     app.innerHTML = ''
@@ -2318,6 +2406,7 @@
     app.classList.remove("map-main");
     mapLink.classList.remove("active");
     bridgesLink.classList.remove("active");
+    debateLink.classList.remove("active");
     libLink.classList.remove("active");
     askLink.classList.add("active");
     app.innerHTML = ''
@@ -2360,6 +2449,242 @@
       askLast = null;
       runAsk(hint.dataset.question);
     });
+  }
+
+  // «Спор авторов»: две книги — где авторы согласны, где расходятся и что есть
+  // только у одной. Последний результат держим в памяти: с идеи возвращаешься сразу.
+  let debateLast = null;
+
+  function debateDate(value) {
+    const date = new Date(String(value || "").replace(" ", "T") + "Z");
+    if (Number.isNaN(date.getTime())) return "";
+    return date.toLocaleString("ru-RU", {
+      day: "numeric", month: "long", hour: "2-digit", minute: "2-digit",
+    });
+  }
+
+  function debateSide(quote, chapter, title, dot) {
+    return ''
+      + '<p class="bridge-book"><span class="fdot" style="background:' + dot + '"></span>'
+      + esc(shortText(title, 28))
+      + (chapter ? ' · ' + esc(shortText(chapter, 26)) : '')
+      + '</p>'
+      + '<blockquote class="bridge-quote">«' + esc(quote) + '»</blockquote>';
+  }
+
+  function debateLinkCard(link, bookA, bookB) {
+    const style = LINK_STYLES[link.type] || LINK_STYLES.same;
+    return ''
+      + '<article class="debate-card">'
+      + '<div class="debate-meta" style="color:' + style.color + '">'
+      + '<span>' + style.icon + '</span>'
+      + '<span>' + esc(LINK_TYPES[link.type] || link.type) + '</span>'
+      + '<span class="debate-conf">' + Math.round(Number(link.confidence) * 100) + '%</span>'
+      + '</div>'
+      + debateSide(link.a_quote, link.a_chapter_title, bookA.title, "var(--book-a)")
+      + debateSide(link.b_quote, link.b_chapter_title, bookB.title, "var(--book-b)")
+      + (link.explanation ? '<p class="debate-why">' + esc(link.explanation) + '</p>' : "")
+      + '<div class="debate-open">'
+      + '<a href="#/idea/' + encodeURIComponent(link.from_id) + '">Идея А →</a>'
+      + '<a href="#/idea/' + encodeURIComponent(link.to_id) + '">Идея Б →</a>'
+      + '</div></article>';
+  }
+
+  function debateOnlyCard(idea) {
+    return ''
+      + '<article class="debate-card">'
+      + '<p class="bridge-book">'
+      + (idea.chapter_title
+          ? '<span class="fdot" style="background: var(--ink-muted)"></span>'
+            + esc(shortText(idea.chapter_title, 34))
+          : 'глава ' + esc(String(idea.chapter)))
+      + '</p>'
+      + '<h3 class="debate-title">' + esc(idea.idea) + '</h3>'
+      + (idea.quote ? '<blockquote class="bridge-quote">«' + esc(idea.quote) + '»</blockquote>' : "")
+      + '</article>';
+  }
+
+  function debateColumn(title, icon, color, cards, empty) {
+    return ''
+      + '<section class="debate-col">'
+      + '<h2 class="bgroup-head" style="color:' + color + '">'
+      + '<span class="bgroup-icon">' + icon + '</span>' + esc(title)
+      + '<span class="bgroup-count">' + cards.length + '</span></h2>'
+      + (cards.length
+          ? '<div class="debate-cards">' + cards.join("") + '</div>'
+          : '<p class="bridge-empty">' + esc(empty) + '</p>')
+      + '</section>';
+  }
+
+  function debateBody(data) {
+    const groups = data.groups || {};
+    const agree = (groups.agree || []).map((link) => debateLinkCard(link, data.book_a, data.book_b));
+    const disagree = (groups.disagree || []).map((link) => debateLinkCard(link, data.book_a, data.book_b));
+    const onlyA = (groups.only_a || []).map(debateOnlyCard);
+    const onlyB = (groups.only_b || []).map(debateOnlyCard);
+    const nothing = "Все ключевые идеи перекликаются с другой книгой.";
+
+    const solo = ''
+      + '<section class="debate-col">'
+      + '<h2 class="bgroup-head" style="color: var(--ink-muted)">'
+      + '<span class="bgroup-icon">◑</span>Только у одной'
+      + '<span class="bgroup-count">' + (onlyA.length + onlyB.length) + '</span></h2>'
+      + '<p class="debate-sub">У «' + esc(shortText(data.book_a.title, 44)) + '»</p>'
+      + (onlyA.length ? '<div class="debate-cards">' + onlyA.join("") + '</div>'
+                      : '<p class="bridge-empty">' + nothing + '</p>')
+      + '<p class="debate-sub">У «' + esc(shortText(data.book_b.title, 44)) + '»</p>'
+      + (onlyB.length ? '<div class="debate-cards">' + onlyB.join("") + '</div>'
+                      : '<p class="bridge-empty">' + nothing + '</p>')
+      + '</section>';
+
+    const verdict = ''
+      + '<section class="debate-verdict">'
+      + '<h2>В чём суть разногласия</h2>'
+      + '<p>' + esc(data.verdict || "") + '</p>'
+      + '<div class="debate-verdict-foot">'
+      + '<span class="hint">' + (data.cached ? "Резюме из кэша: " : "Посчитано заново: ")
+      + esc(debateDate(data.created)) + '</span>'
+      + '<button class="btn" id="debateRefresh" type="button">Пересчитать</button>'
+      + '</div></section>';
+
+    return ''
+      + '<div class="debate-grid">'
+      + debateColumn("Согласны", "✓", "var(--supports)", agree, "Общих мест не найдено.")
+      + debateColumn("Спорят", "⚔", "var(--contradicts)", disagree, "Прямых противоречий нет.")
+      + solo
+      + '</div>'
+      + verdict;
+  }
+
+  async function showDebate(bookA, bookB) {
+    app.classList.remove("map-main");
+    mapLink.classList.remove("active");
+    bridgesLink.classList.remove("active");
+    askLink.classList.remove("active");
+    libLink.classList.remove("active");
+    debateLink.classList.add("active");
+    app.innerHTML = ''
+      + '<section class="debate">'
+      + '<h1>Спор авторов</h1>'
+      + '<p class="lead">Выберите две книги — Marginalia покажет, где авторы '
+      + 'согласны, где расходятся и какие ключевые идеи есть только у одной.</p>'
+      + '<div class="debate-pick">'
+      + '<label><span>Книга А</span><select id="debateA"></select></label>'
+      + '<label><span>Книга Б</span><select id="debateB"></select></label>'
+      + '<button class="btn" id="debateSwap" type="button" title="Поменять книги местами">'
+      + '⇄ Поменять</button>'
+      + '</div>'
+      + '<p class="debate-status" id="debateStatus"></p>'
+      + '<div id="debateBody"></div>'
+      + '</section>';
+
+    const section = app.querySelector(".debate");
+    const selectA = app.querySelector("#debateA");
+    const selectB = app.querySelector("#debateB");
+    const status = app.querySelector("#debateStatus");
+    const body = app.querySelector("#debateBody");
+
+    let books;
+    try {
+      books = await api("api/books");
+    } catch (error) {
+      status.textContent = error.message;
+      return;
+    }
+    if (!section.isConnected) return;
+    if (books.length < 2) {
+      selectA.disabled = true;
+      selectB.disabled = true;
+      app.querySelector("#debateSwap").disabled = true;
+      status.textContent = "Для спора нужны две книги: сейчас в библиотеке "
+        + plural(books.length, "книга", "книги", "книг") + ".";
+      return;
+    }
+
+    const known = (id) => books.some((book) => book.id === id);
+    let left = known(bookA) ? bookA : "";
+    let right = known(bookB) && bookB !== left ? bookB : "";
+    if (!left && debateLast && known(debateLast.a) && known(debateLast.b)) {
+      left = debateLast.a;
+      right = debateLast.b;
+    }
+    if (!left) left = books[0].id;
+    if (!right) right = books.find((book) => book.id !== left).id;
+
+    const optionList = (chosen) => books.map((book) => ''
+      + '<option value="' + esc(book.id) + '"' + (book.id === chosen ? " selected" : "") + '>'
+      + esc(shortText(book.title, 56))
+      + (book.author ? ' — ' + esc(shortText(book.author, 28)) : "")
+      + '</option>').join("");
+    selectA.innerHTML = optionList(left);
+    selectB.innerHTML = optionList(right);
+    selectA.value = left;
+    selectB.value = right;
+
+    function rememberPair() {
+      const pair = selectA.value + "/" + selectB.value;
+      if (location.hash !== "#/debate/" + pair) {
+        history.replaceState(null, "", "#/debate/" + pair);
+      }
+    }
+
+    async function load(refresh) {
+      const first = selectA.value;
+      const second = selectB.value;
+      if (first === second) {
+        status.textContent = "Выберите две разные книги.";
+        return;
+      }
+      rememberPair();
+      const old = body.querySelector("#debateRefresh");
+      if (old) old.disabled = true;
+      if (refresh) {
+        status.textContent = "Пересчитываю: модель перечитывает связи…";
+      } else if (!body.firstChild) {
+        status.textContent = "Сравниваю книги…";
+      }
+      try {
+        const url = "api/debate/" + encodeURIComponent(first) + "/" + encodeURIComponent(second);
+        const data = refresh ? await api(url + "/refresh", { method: "POST" }) : await api(url);
+        if (!body.isConnected) return;
+        debateLast = { a: first, b: second, data: data };
+        status.textContent = "";
+        body.innerHTML = debateBody(data);
+        const again = body.querySelector("#debateRefresh");
+        if (again) again.addEventListener("click", () => load(true));
+      } catch (error) {
+        if (!body.isConnected) return;
+        status.textContent = "";
+        body.innerHTML = '<p class="bridge-empty">' + esc(error.message) + '</p>';
+      }
+    }
+
+    function otherThan(id) {
+      return books.find((book) => book.id !== id).id;
+    }
+
+    selectA.addEventListener("change", () => {
+      if (selectA.value === selectB.value) selectB.value = otherThan(selectA.value);
+      load();
+    });
+    selectB.addEventListener("change", () => {
+      if (selectB.value === selectA.value) selectA.value = otherThan(selectB.value);
+      load();
+    });
+    app.querySelector("#debateSwap").addEventListener("click", () => {
+      const swap = selectA.value;
+      selectA.value = selectB.value;
+      selectB.value = swap;
+      load();
+    });
+
+    if (debateLast && debateLast.a === left && debateLast.b === right) {
+      body.innerHTML = debateBody(debateLast.data);
+      const again = body.querySelector("#debateRefresh");
+      if (again) again.addEventListener("click", () => load(true));
+      return;
+    }
+    load();
   }
 
   function openPendingBridge() {
@@ -2413,11 +2738,14 @@
     const onMap = location.hash === "#/map";
     const onBridges = location.hash === "#/bridges";
     const onAsk = location.hash === "#/ask";
+    const onDebate = location.hash === "#/debate"
+      || location.hash.startsWith("#/debate/");
     app.classList.toggle("map-main", onMap);
     mapLink.classList.toggle("active", onMap);
     bridgesLink.classList.toggle("active", onBridges);
     askLink.classList.toggle("active", onAsk);
-    libLink.classList.toggle("active", !onMap && !onBridges && !onAsk);
+    debateLink.classList.toggle("active", onDebate);
+    libLink.classList.toggle("active", !onMap && !onBridges && !onAsk && !onDebate);
     if (onMap) {
       showMap();
       return;
@@ -2428,6 +2756,12 @@
     }
     if (onAsk) {
       showAsk();
+      return;
+    }
+    if (onDebate) {
+      const pair = location.hash.match(/^#\/debate\/([^/]+)\/([^/]+)$/);
+      showDebate(pair ? decodeURIComponent(pair[1]) : "",
+                 pair ? decodeURIComponent(pair[2]) : "");
       return;
     }
     const idea = location.hash.match(/^#\/idea\/(\d+)$/);
