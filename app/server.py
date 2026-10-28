@@ -82,6 +82,16 @@ def init_db() -> None:
                 points TEXT NOT NULL,
                 created TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS links (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                from_id INTEGER NOT NULL REFERENCES ideas(id) ON DELETE CASCADE,
+                to_id INTEGER NOT NULL REFERENCES ideas(id) ON DELETE CASCADE,
+                type TEXT NOT NULL,
+                explanation TEXT NOT NULL,
+                confidence REAL NOT NULL,
+                created TEXT NOT NULL,
+                UNIQUE(from_id, to_id)
+            );
             """
         )
 
@@ -187,7 +197,7 @@ def get_chapter(book_id: str, idx: int) -> dict | None:
 def get_ideas(book_id: str, chapter: int) -> list[dict]:
     with connect() as db:
         rows = db.execute(
-            "SELECT idea, quote, why FROM ideas WHERE book_id = ? AND chapter = ? ORDER BY id",
+            "SELECT id, idea, quote, why FROM ideas WHERE book_id = ? AND chapter = ? ORDER BY id",
             (book_id, chapter),
         ).fetchall()
     return [dict(row) for row in rows]
@@ -212,6 +222,34 @@ def get_key_ideas(book_id: str) -> list[dict]:
             " WHERE k.book_id = ? ORDER BY k.rank", (book_id,)
         ).fetchall()
     return [dict(row) for row in rows]
+
+
+def get_idea(idea_id: int) -> dict | None:
+    """Идея с её связями с идеями из других книг."""
+    with connect() as db:
+        row = db.execute(
+            "SELECT i.id, i.book_id, i.chapter, i.idea, i.quote, i.why,"
+            " b.title AS book_title, c.title AS chapter_title"
+            " FROM ideas i"
+            " JOIN books b ON b.id = i.book_id"
+            " LEFT JOIN chapters c ON c.book_id = i.book_id AND c.idx = i.chapter"
+            " WHERE i.id = ?", (idea_id,)
+        ).fetchone()
+        if row is None:
+            return None
+        links = db.execute(
+            "SELECT l.type, l.explanation, l.confidence,"
+            " o.id AS idea_id, o.idea, o.quote, o.why, o.chapter,"
+            " b.title AS book_title, c.title AS chapter_title"
+            " FROM links l"
+            " JOIN ideas o ON o.id = l.to_id"
+            " JOIN books b ON b.id = o.book_id"
+            " LEFT JOIN chapters c ON c.book_id = o.book_id AND c.idx = o.chapter"
+            " WHERE l.from_id = ? ORDER BY l.confidence DESC", (idea_id,)
+        ).fetchall()
+    result = dict(row)
+    result["links"] = [dict(link) for link in links]
+    return result
 
 
 def get_summary(book_id: str) -> dict | None:
@@ -248,6 +286,16 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/books":
             self.send_json(list_books())
             return
+
+        if path.startswith("/api/ideas/"):
+            rest = path[len("/api/ideas/"):].rstrip("/")
+            if rest.isdigit():
+                idea = get_idea(int(rest))
+                if idea is None:
+                    self.send_error_text(404, "Идея не найдена.")
+                    return
+                self.send_json(idea)
+                return
 
         if path.startswith("/api/books/"):
             rest = path[len("/api/books/"):].rstrip("/")
