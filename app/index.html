@@ -936,8 +936,14 @@
   }
 
   /** Колонки книг: идеи друг под другом, подписи сбоку от точки. */
-  function layoutColumns(ideas, links, width, height) {
-    const bookIds = [...new Set(ideas.map((idea) => idea.book_id))];
+  function layoutColumns(ideas, links, width, height, bookOrder) {
+    // Колонки идут в порядке добавления книг в библиотеку, а не в порядке идей:
+    // «Зеленый свет» слева, «Черновик» справа, как договорились.
+    const present = new Set(ideas.map((idea) => idea.book_id));
+    const bookIds = bookOrder.filter((bookId) => present.has(bookId));
+    present.forEach((bookId) => {
+      if (!bookIds.includes(bookId)) bookIds.push(bookId);
+    });
     const order = orderColumns(ideas, links, bookIds);
     const maxRows = Math.max(1, ...bookIds.map((id) => order.get(id).length));
     const avail = Math.max(120, height - HEAD_H - MAP_MARGIN);
@@ -1022,7 +1028,14 @@
       degree.set(from, (degree.get(from) || 0) + 1);
       degree.set(to, (degree.get(to) || 0) + 1);
     });
-    return { ideas, links, degree };
+    // Сузили типы или уверенность — идеи без видимой связи с карты уходят.
+    // Выбор книг и «Показать все идеи» оставляют идеи на месте: у одной книги
+    // межкнижных связей нет, и пустая карта тут ничего не объясняет.
+    const narrowed = state.types.size < Object.keys(LINK_STYLES).length || state.minConf > 0.6;
+    const shown = !state.allLoaded && narrowed
+      ? ideas.filter((idea) => degree.has(Number(idea.id)))
+      : ideas;
+    return { ideas: shown, links, degree };
   }
 
   function nodeRadius(degree) {
@@ -1042,14 +1055,20 @@
     )).join("");
   }
 
-  function filtersMarkup() {
+  function filtersMarkup(ideas, links) {
     const state = mapState;
+    // Числа в фильтрах — про то, что сейчас на карте: идей у книги и связей
+    // у типа после выбора книг и порога уверенности.
     const bookCount = new Map();
-    state.graph.ideas.forEach((idea) => {
+    ideas.forEach((idea) => {
       bookCount.set(idea.book_id, (bookCount.get(idea.book_id) || 0) + 1);
     });
+    const bookOf = new Map(state.graph.ideas.map((idea) => [Number(idea.id), idea.book_id]));
     const typeCount = new Map();
     state.links.forEach((link) => {
+      if (Number(link.confidence) < state.minConf) return;
+      if (!state.bookIds.has(bookOf.get(Number(link.from_id)))) return;
+      if (!state.bookIds.has(bookOf.get(Number(link.to_id)))) return;
       typeCount.set(link.type, (typeCount.get(link.type) || 0) + 1);
     });
     const bookRows = state.graph.books.map((book) => (
@@ -1188,7 +1207,7 @@
     const open = app.querySelector(".map-screen")?.classList.contains("filters-open");
     app.innerHTML = ''
       + '<div class="map-screen' + (open ? " filters-open" : "") + '" id="mapScreen">'
-      + '<aside class="map-filters" id="mapFilters">' + filtersMarkup() + '</aside>'
+      + '<aside class="map-filters" id="mapFilters">' + filtersMarkup(ideas, links) + '</aside>'
       + '<div class="map-canvas" id="mapCanvas">'
       + '<svg id="mapSvg" preserveAspectRatio="xMidYMin meet" role="img" aria-label="Карта идей">'
       + '<defs>' + markersMarkup() + '</defs>'
@@ -1221,7 +1240,8 @@
     const rect = canvas.getBoundingClientRect();
     const width = Math.max(320, Math.round(rect.width));
     const height = Math.max(320, Math.round(rect.height));
-    const layout = layoutColumns(ideas, links, width, height);
+    const bookOrder = mapState.graph.books.map((book) => book.id);
+    const layout = layoutColumns(ideas, links, width, height, bookOrder);
     mapSize = { w: width, h: layout.contentH };
     svg.setAttribute("viewBox", "0 0 " + width + " " + layout.contentH);
     svg.style.height = layout.contentH + "px";
