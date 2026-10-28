@@ -125,6 +125,20 @@ def init_db() -> None:
                 created TEXT NOT NULL,
                 PRIMARY KEY (book_a, book_b)
             );
+
+            CREATE TABLE IF NOT EXISTS reviews (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                source TEXT NOT NULL UNIQUE,
+                kind TEXT NOT NULL,
+                stage INTEGER NOT NULL DEFAULT 0,
+                due TEXT NOT NULL,
+                seen INTEGER NOT NULL DEFAULT 0,
+                forgot INTEGER NOT NULL DEFAULT 0,
+                answered TEXT NOT NULL DEFAULT '',
+                created TEXT NOT NULL,
+                updated TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS reviews_due ON reviews(due);
             """
         )
         # Короткий заголовок идеи для карты (3–6 слов), его пишет app/titles.py.
@@ -471,6 +485,12 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(get_graph(all_ideas))
             return
 
+        if path == "/api/review/today":
+            from review import today_cards
+
+            self.send_json(today_cards())
+            return
+
         if path.startswith("/api/ideas/"):
             rest = path[len("/api/ideas/"):].rstrip("/")
             if rest.isdigit():
@@ -571,6 +591,11 @@ class Handler(BaseHTTPRequestHandler):
             self.save_link_mark(int(link_mark.group(1)), int(link_mark.group(2)))
             return
 
+        review_route = re.fullmatch(r"/api/review/(\d+)/answer", path)
+        if review_route:
+            self.review_answer(int(review_route.group(1)))
+            return
+
         if path == "/api/ask":
             self.ask_library()
             return
@@ -652,6 +677,19 @@ class Handler(BaseHTTPRequestHandler):
             return
         if result is None:
             self.send_error_text(404, "Книга не найдена.")
+            return
+        self.send_json(result)
+
+    def review_answer(self, card_id: int) -> None:
+        """Ответ на карточку повторения: «Помню» или «Не помню»."""
+        data = self.read_json_body("Не вижу ответа.")
+        if data is None:
+            return
+        remembered = bool(data.get("remembered"))
+        from review import answer_card              # review берёт connect из этого модуля
+        result = answer_card(card_id, remembered)
+        if result is None:
+            self.send_error_text(404, "Карточка не найдена.")
             return
         self.send_json(result)
 
