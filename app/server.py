@@ -168,6 +168,15 @@ def get_chapter(book_id: str, idx: int) -> dict | None:
     return dict(row) if row else None
 
 
+def get_ideas(book_id: str, chapter: int) -> list[dict]:
+    with connect() as db:
+        rows = db.execute(
+            "SELECT idea, quote, why FROM ideas WHERE book_id = ? AND chapter = ? ORDER BY id",
+            (book_id, chapter),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
 def strip_prefix(path: str) -> str:
     """Убирает /proxy/8000 из пути: страница живёт под этим префиксом."""
     parts = path.split("/")
@@ -199,6 +208,13 @@ class Handler(BaseHTTPRequestHandler):
                     self.send_error_text(404, "Глава не найдена.")
                     return
                 self.send_json(chapter)
+                return
+            if len(parts) == 4 and parts[1] == "chapters" and parts[2].isdigit() \
+                    and parts[3] == "ideas":
+                if get_chapter(parts[0], int(parts[2])) is None:
+                    self.send_error_text(404, "Глава не найдена.")
+                    return
+                self.send_json(get_ideas(parts[0], int(parts[2])))
                 return
             if len(parts) == 1 and parts[0]:
                 book = get_book(parts[0])

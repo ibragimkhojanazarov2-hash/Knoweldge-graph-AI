@@ -162,6 +162,33 @@
   .reader-meta { color: var(--ink-muted); font-size: 13px; margin-bottom: 30px; }
   .reader-text { font-family: var(--serif); font-size: 19px; line-height: 1.7; }
   .reader-text p { margin: 0 0 1.1em; }
+  .tabs {
+    display: inline-flex; gap: 4px; padding: 4px; margin: 0 0 26px;
+    border: 1px solid var(--line); border-radius: 999px; background: var(--surface);
+  }
+  .tab {
+    border: 0; border-radius: 999px; background: none;
+    color: var(--ink-muted); font: inherit; font-size: 13px;
+    padding: 7px 16px; cursor: pointer;
+  }
+  .tab:hover { color: var(--ink); }
+  .tab[aria-selected="true"] { background: var(--accent); color: #FFF8F2; }
+  html[data-theme="dark"] .tab[aria-selected="true"] { color: #1C1915; }
+  .ideas { list-style: none; margin: 0; padding: 0; display: grid; gap: 18px; }
+  .idea {
+    padding: 20px 22px;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    background: var(--surface);
+  }
+  .idea-text { margin: 0 0 12px; font-family: var(--serif); font-size: 20px; line-height: 1.35; }
+  .idea blockquote {
+    margin: 0 0 12px; padding-left: 14px;
+    border-left: 3px solid var(--accent);
+    font-family: var(--serif); font-size: 16px; line-height: 1.6;
+    color: var(--ink-muted);
+  }
+  .idea-why { margin: 0; font-size: 13px; color: var(--ink-muted); }
   .section-title { font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-muted); margin: 0 0 6px; }
   @media (max-width: 720px) {
     .top { padding: 12px 18px; }
@@ -190,6 +217,7 @@
   const fileInput = document.getElementById("file");
 
   const pageBase = location.pathname.endsWith("/") ? location.pathname : location.pathname + "/";
+  let chapterView = "text";  // какая вкладка открыта в читалке: текст или идеи
 
   async function api(path, options) {
     const response = await fetch(pageBase + path, options);
@@ -342,9 +370,10 @@
     app.innerHTML = `<button class="back" type="button" id="backBtn">← К списку глав</button><p class="hint">Открываю главу…</p>`;
     document.getElementById("backBtn").addEventListener("click", back);
 
-    let chapter;
+    const chapterApi = "api/books/" + encodeURIComponent(id) + "/chapters/" + idx;
+    let chapter, ideas;
     try {
-      chapter = await api("api/books/" + encodeURIComponent(id) + "/chapters/" + idx);
+      [chapter, ideas] = await Promise.all([api(chapterApi), api(chapterApi + "/ideas")]);
     } catch (error) {
       app.innerHTML = `<button class="back" type="button" id="backBtn">← К списку глав</button>
         <p class="note error">${esc(error.message)}</p>`;
@@ -358,14 +387,41 @@
       .map((line) => `<p>${esc(line)}</p>`)
       .join("");
 
+    const ideasMarkup = ideas.length
+      ? `<ul class="ideas">${ideas.map((item) => `
+          <li class="idea">
+            <p class="idea-text">${esc(item.idea)}</p>
+            <blockquote>${esc(item.quote)}</blockquote>
+            <p class="idea-why">${esc(item.why)}</p>
+          </li>`).join("")}</ul>`
+      : `<div class="empty">У этой главы пока нет идей.<br>
+          Запустите <code>python3 app/extract.py ${esc(id)} ${esc(idx)}</code>, и они появятся здесь.</div>`;
+
     app.innerHTML = `
       <button class="back" type="button" id="backBtn">← К списку глав</button>
       <article class="reader">
         <h1>${esc(chapter.title)}</h1>
         <div class="reader-meta">Глава ${String(chapter.idx).padStart(2, "0")} · ${number(chapter.text.length)} знаков</div>
+        <div class="tabs" role="tablist">
+          <button class="tab" type="button" role="tab" data-view="text">Текст</button>
+          <button class="tab" type="button" role="tab" data-view="ideas">Идеи · ${ideas.length}</button>
+        </div>
         <div class="reader-text">${paragraphs}</div>
+        <div class="ideas-pane">${ideasMarkup}</div>
       </article>`;
     document.getElementById("backBtn").addEventListener("click", back);
+
+    const textPane = app.querySelector(".reader-text");
+    const ideasPane = app.querySelector(".ideas-pane");
+    const tabs = app.querySelectorAll(".tab");
+    function setView(view) {
+      chapterView = view;
+      tabs.forEach((tab) => tab.setAttribute("aria-selected", String(tab.dataset.view === view)));
+      textPane.hidden = view === "ideas";
+      ideasPane.hidden = view !== "ideas";
+    }
+    tabs.forEach((tab) => tab.addEventListener("click", () => setView(tab.dataset.view)));
+    setView(chapterView);
   }
 
   function route() {
