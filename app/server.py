@@ -190,8 +190,11 @@ def save_book(book: dict) -> str:
 def list_books() -> list[dict]:
     with connect() as db:
         rows = db.execute(
-            "SELECT id, title, author, lang, cover, chapter_count, char_count"
-            " FROM books ORDER BY added DESC"
+            "SELECT b.id, b.title, b.author, b.lang, b.cover, b.chapter_count, b.char_count,"
+            " (SELECT COUNT(*) FROM links l"
+            "  WHERE l.from_id IN (SELECT id FROM ideas WHERE book_id = b.id)"
+            "     OR l.to_id IN (SELECT id FROM ideas WHERE book_id = b.id)) AS link_count"
+            " FROM books b ORDER BY b.added DESC"
         ).fetchall()
     return [dict(row) for row in rows]
 
