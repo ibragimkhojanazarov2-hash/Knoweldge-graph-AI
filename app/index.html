@@ -1204,6 +1204,42 @@
       if (!bookIds.includes(bookId)) bookIds.push(bookId);
     });
     const order = orderColumns(ideas, links, bookIds);
+    const counts = new Map(bookIds.map((bookId) => [bookId, order.get(bookId).length]));
+
+    // Телефон: колонки рядом не помещаются, подписи уезжают за край.
+    // Книги идут друг под другом, точки у левого края, подпись — во всю ширину.
+    if (width < 700) {
+      const HEAD_STACK = 46;   // обложка и название книги над её идеями
+      const BOOK_GAP = 18;     // воздух между книгами
+      const totalRows = Math.max(1, [...counts.values()].reduce((sum, n) => sum + n, 0));
+      const avail = Math.max(120, height - MAP_MARGIN - bookIds.length * (HEAD_STACK + BOOK_GAP));
+      const rowH = Math.max(18, Math.min(30, avail / totalRows));
+      const dotX = MAP_MARGIN + 16;
+      const positions = new Map();
+      const columns = [];
+      let y = MAP_MARGIN + 6;
+      bookIds.forEach((bookId) => {
+        const list = order.get(bookId);
+        const fitLabel = labelFitter(Math.max(80, width - MAP_MARGIN - dotX - 22));
+        columns.push({
+          bookId, stacked: true, top: y, left: MAP_MARGIN, width: width - MAP_MARGIN * 2,
+          center: width / 2, dotX, outward: 1,
+          titleLimit: Math.max(8, Math.round((width - MAP_MARGIN * 2 - 44) / 8.5)),
+        });
+        y += HEAD_STACK;
+        list.forEach((idea, row) => {
+          positions.set(Number(idea.id), {
+            x: dotX, y: y + rowH * (row + 0.5), row, rowH,
+            labelX: dotX + 16, anchor: "start", below: false,
+            label: fitLabel(idea.title || idea.idea),
+          });
+        });
+        y += list.length * rowH + BOOK_GAP;
+      });
+      const contentH = Math.max(height, Math.round(y - BOOK_GAP + MAP_MARGIN));
+      return { positions, columns, counts, rowH, contentH, stacked: true };
+    }
+
     const maxRows = Math.max(1, ...bookIds.map((id) => order.get(id).length));
     const avail = Math.max(120, height - HEAD_H - MAP_MARGIN);
     // Строка не ниже 22px: подпись 14px иначе налезает на соседнюю.
@@ -1242,7 +1278,6 @@
         });
       });
     });
-    const counts = new Map(bookIds.map((bookId) => [bookId, order.get(bookId).length]));
     return { positions, columns, counts, rowH, contentH };
   }
 
@@ -1362,9 +1397,29 @@
     const books = new Map(mapState.graph.books.map((book) => [book.id, book]));
     return layout.columns.map((col) => {
       const book = books.get(col.bookId) || { id: col.bookId, title: col.bookId, cover: null };
+      const color = mapState.colorOf.get(col.bookId) || "var(--book-a)";
+      // На телефоне книга — строкой: обложка слева, название и число идей рядом.
+      if (col.stacked) {
+        const coverW = 26;
+        const coverH = 36;
+        const textX = MAP_MARGIN + coverW + 10;
+        const cover = book.cover
+          ? '<image href="' + esc(pageBase) + 'covers/' + encodeURIComponent(book.cover)
+            + '" x="' + MAP_MARGIN + '" y="' + (col.top + 1) + '" width="' + coverW
+            + '" height="' + coverH + '" preserveAspectRatio="xMidYMid meet"/>'
+          : '<rect x="' + MAP_MARGIN + '" y="' + (col.top + 1) + '" width="' + coverW
+            + '" height="' + coverH + '" rx="3" fill="' + color + '" opacity=".35"/>'
+            + '<text class="map-head-initial" x="' + (MAP_MARGIN + coverW / 2)
+            + '" y="' + (col.top + 26) + '" text-anchor="middle">'
+            + esc(String(book.title || "?").slice(0, 1)) + '</text>';
+        return '<g class="map-head" data-book="' + esc(col.bookId) + '">' + cover
+          + '<text class="map-head-title" x="' + textX + '" y="' + (col.top + 16)
+          + '">' + esc(shortText(book.title, col.titleLimit)) + '</text>'
+          + '<text class="map-head-count" x="' + textX + '" y="' + (col.top + 32)
+          + '">' + layout.counts.get(col.bookId) + ' идей</text></g>';
+      }
       const coverW = 44;
       const coverH = 62;
-      const color = mapState.colorOf.get(col.bookId) || "var(--book-a)";
       const cover = book.cover
         ? '<image href="' + esc(pageBase) + 'covers/' + encodeURIComponent(book.cover)
           + '" x="' + (col.center - coverW / 2).toFixed(1) + '" y="10" width="' + coverW
@@ -1406,6 +1461,7 @@
     const BADGE_T = [0.5, 0.4, 0.6, 0.3, 0.7, 0.24, 0.76, 0.18, 0.82];
     const placed = [];
     const edgeParts = [];
+    let edgeIndex = 0;
     links.forEach((link) => {
       const from = Number(link.from_id);
       const to = Number(link.to_id);
@@ -1422,27 +1478,50 @@
         : pairOn ? !onPair : false;
       // Дуга выходит из точки горизонтально и так же входит в соседнюю:
       // между колонками это читается как плавная связь, а не как клубок.
-      const sign = b.x >= a.x ? 1 : -1;
-      const x1 = a.x + sign * r1;
-      const x2 = b.x - sign * r2;
-      const c1 = x1 + (x2 - x1) * 0.42;
-      const c2 = x2 - (x2 - x1) * 0.42;
+      // Когда книги стоят друг под другом (телефон), дуга идёт сверху вниз.
+      const upright = Math.abs(b.y - a.y) > Math.abs(b.x - a.x) * 1.6;
+      let p0, p1, p2, p3;
+      if (upright) {
+        // Связей между книгами много, поэтому дуги идут тремя рядами
+        // по левому полю и выходят из точки сбоку, не задевая соседние.
+        const lane = edgeIndex % 3;
+        const bow = Math.max(4, Math.min(a.x, b.x) - 20 - lane * 6);
+        p0 = { x: a.x - r1, y: a.y };
+        p1 = { x: bow, y: a.y };
+        p2 = { x: bow, y: b.y };
+        p3 = { x: b.x - r2, y: b.y };
+      } else {
+        const sign = b.x >= a.x ? 1 : -1;
+        const x1 = a.x + sign * r1;
+        const x2 = b.x - sign * r2;
+        const c1 = x1 + (x2 - x1) * 0.42;
+        const c2 = x2 - (x2 - x1) * 0.42;
+        p0 = { x: x1, y: a.y };
+        p1 = { x: c1, y: a.y };
+        p2 = { x: c2, y: b.y };
+        p3 = { x: x2, y: b.y };
+      }
+      const at = (t) => {
+        const u = 1 - t;
+        return {
+          x: u * u * u * p0.x + 3 * u * u * t * p1.x + 3 * u * t * t * p2.x + t * t * t * p3.x,
+          y: u * u * u * p0.y + 3 * u * u * t * p1.y + 3 * u * t * t * p2.y + t * t * t * p3.y,
+        };
+      };
       let spot = null;
       for (const t of BADGE_T) {
-        const u = 1 - t;
-        const x = u * u * u * x1 + 3 * u * u * t * c1 + 3 * u * t * t * c2 + t * t * t * x2;
-        const y = a.y + (b.y - a.y) * (3 * t * t - 2 * t * t * t);
-        if (placed.every((p) => Math.hypot(p.x - x, p.y - y) >= 20)) {
-          spot = { x, y };
+        const point = at(t);
+        if (placed.every((p) => Math.hypot(p.x - point.x, p.y - point.y) >= 20)) {
+          spot = point;
           break;
         }
       }
-      if (!spot) spot = { x: (x1 + x2) / 2, y: (a.y + b.y) / 2 };
+      if (!spot) spot = at(0.5);
       placed.push(spot);
-      const d = "M" + x1.toFixed(1) + " " + a.y.toFixed(1)
-        + " C" + c1.toFixed(1) + " " + a.y.toFixed(1)
-        + ", " + c2.toFixed(1) + " " + b.y.toFixed(1)
-        + ", " + x2.toFixed(1) + " " + b.y.toFixed(1);
+      const d = "M" + p0.x.toFixed(1) + " " + p0.y.toFixed(1)
+        + " C" + p1.x.toFixed(1) + " " + p1.y.toFixed(1)
+        + ", " + p2.x.toFixed(1) + " " + p2.y.toFixed(1)
+        + ", " + p3.x.toFixed(1) + " " + p3.y.toFixed(1);
       edgeParts.push(
         '<g class="map-edge' + (dim ? " dim" : "") + (onPair ? " sel" : "")
         + '" data-edge="' + from + "-" + to + '"'
@@ -1458,6 +1537,7 @@
         + '" fill="' + style.color + '">' + style.icon + '</text>'
         + '</g>'
       );
+      edgeIndex += 1;
     });
     const nodeParts = ideas.map((idea) => {
       const id = Number(idea.id);
