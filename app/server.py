@@ -76,6 +76,12 @@ def init_db() -> None:
                 why TEXT NOT NULL,
                 created TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS summary (
+                book_id TEXT PRIMARY KEY REFERENCES books(id) ON DELETE CASCADE,
+                about TEXT NOT NULL,
+                points TEXT NOT NULL,
+                created TEXT NOT NULL
+            );
             """
         )
 
@@ -208,6 +214,19 @@ def get_key_ideas(book_id: str) -> list[dict]:
     return [dict(row) for row in rows]
 
 
+def get_summary(book_id: str) -> dict | None:
+    """Краткий конспект книги: о чём она и главные мысли по пунктам."""
+    with connect() as db:
+        row = db.execute(
+            "SELECT about, points, created FROM summary WHERE book_id = ?", (book_id,)
+        ).fetchone()
+    if row is None:
+        return None
+    result = dict(row)
+    result["points"] = json.loads(result["points"])
+    return result
+
+
 def strip_prefix(path: str) -> str:
     """Убирает /proxy/8000 из пути: страница живёт под этим префиксом."""
     parts = path.split("/")
@@ -246,6 +265,12 @@ class Handler(BaseHTTPRequestHandler):
                     self.send_error_text(404, "Глава не найдена.")
                     return
                 self.send_json(get_ideas(parts[0], int(parts[2])))
+                return
+            if len(parts) == 2 and parts[1] == "summary":
+                if get_book(parts[0]) is None:
+                    self.send_error_text(404, "Книга не найдена.")
+                    return
+                self.send_json(get_summary(parts[0]))
                 return
             if len(parts) == 2 and parts[1] == "key-ideas":
                 if get_book(parts[0]) is None:
