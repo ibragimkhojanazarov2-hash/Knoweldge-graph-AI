@@ -154,6 +154,11 @@ def read_epub(source: bytes | str) -> dict:
             media = cover_item.get("media-type") or ""
             cover_ext = ".jpg" if "jpeg" in media else (".png" if "png" in media else
                         posixpath.splitext(href)[1].lower() or ".jpg")
+            # Обложкой бывает и XHTML-страница с картинкой: её нельзя
+            # показывать как картинку, поэтому берём только изображения.
+            if not media.startswith("image/") and cover_ext not in (".jpg", ".jpeg", ".png", ".gif", ".webp"):
+                cover_bytes = None
+                cover_ext = None
         except KeyError:
             cover_bytes = None
 
