@@ -17,7 +17,7 @@ import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 from epub import read_epub
 
@@ -29,6 +29,7 @@ INDEX = Path(__file__).resolve().parent / "index.html"
 MAX_UPLOAD = 100 * 1024 * 1024  # 100 МБ
 MAX_NOTE_BYTES = 20000  # тело запроса с заметкой
 MAX_NOTE_CHARS = 5000   # длина самой заметки
+MAX_IDEA_CHARS = 1000   # длина идеи после правки
 
 
 def connect() -> sqlite3.Connection:
@@ -100,6 +101,11 @@ def init_db() -> None:
                 idea_id INTEGER NOT NULL REFERENCES ideas(id) ON DELETE CASCADE,
                 text TEXT NOT NULL,
                 created TEXT NOT NULL,
+                updated TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS idea_marks (
+                idea_id INTEGER PRIMARY KEY REFERENCES ideas(id) ON DELETE CASCADE,
+                verdict TEXT NOT NULL,
                 updated TEXT NOT NULL
             );
             """
@@ -296,6 +302,49 @@ def delete_note(note_id: int) -> bool:
     return cursor.rowcount > 0
 
 
+def get_graph(all_ideas: bool = False) -> dict:
+    """Идеи и связи для карты: по умолчанию только идеи, у которых есть связи."""
+    linked = "i.id IN (SELECT from_id FROM links UNION SELECT to_id FROM links)"
+    where = "" if all_ideas else f" WHERE {linked}"
+    with connect() as db:
+        books = [dict(row) for row in db.execute(
+            "SELECT id, title, author FROM books ORDER BY title"
+        ).fetchall()]
+        ideas = [dict(row) for row in db.execute(
+            "SELECT i.id, i.book_id, b.title AS book_title, i.chapter, i.idea, i.quote, i.why,"
+            " COALESCE(m.verdict, '') AS verdict"
+            " FROM ideas i"
+            " JOIN books b ON b.id = i.book_id"
+            " LEFT JOIN idea_marks m ON m.idea_id = i.id"
+            + where + " ORDER BY i.id"
+        ).fetchall()]
+        links = [dict(row) for row in db.execute(
+            "SELECT from_id, to_id, type, explanation, confidence FROM links ORDER BY id"
+        ).fetchall()]
+    return {"books": books, "ideas": ideas, "links": links}
+
+
+def set_verdict(idea_id: int, verdict: str) -> None:
+    """Оценка идеи читателем: right, wrong — или пустая строка, чтобы снять."""
+    if not verdict:
+        with connect() as db:
+            db.execute("DELETE FROM idea_marks WHERE idea_id = ?", (idea_id,))
+        return
+    updated = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    with connect() as db:
+        db.execute(
+            "INSERT INTO idea_marks (idea_id, verdict, updated) VALUES (?, ?, ?)"
+            " ON CONFLICT(idea_id) DO UPDATE SET verdict = excluded.verdict,"
+            " updated = excluded.updated",
+            (idea_id, verdict, updated),
+        )
+
+
+def edit_idea(idea_id: int, text: str) -> None:
+    with connect() as db:
+        db.execute("UPDATE ideas SET idea = ? WHERE id = ?", (text, idea_id))
+
+
 def get_summary(book_id: str) -> dict | None:
     """Краткий конспект книги: о чём она и главные мысли по пунктам."""
     with connect() as db:
@@ -321,7 +370,8 @@ class Handler(BaseHTTPRequestHandler):
     server_version = "Marginalia/0.1"
 
     def do_GET(self) -> None:
-        path = strip_prefix(unquote(urlparse(self.path).path))
+        url = urlparse(self.path)
+        path = strip_prefix(unquote(url.path))
 
         if path in ("/", "/index.html"):
             self.send_bytes(INDEX.read_bytes(), "text/html; charset=utf-8")
@@ -329,6 +379,11 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/books":
             self.send_json(list_books())
+            return
+
+        if path == "/api/graph":
+            all_ideas = parse_qs(url.query).get("all", ["0"])[0] == "1"
+            self.send_json(get_graph(all_ideas))
             return
 
         if path.startswith("/api/ideas/"):
@@ -400,6 +455,16 @@ class Handler(BaseHTTPRequestHandler):
             self.save_note(int(note_route.group(1)))
             return
 
+        mark_route = re.fullmatch(r"/api/ideas/(\d+)/mark", path)
+        if mark_route:
+            self.save_mark(int(mark_route.group(1)))
+            return
+
+        edit_route = re.fullmatch(r"/api/ideas/(\d+)/edit", path)
+        if edit_route:
+            self.save_edit(int(edit_route.group(1)))
+            return
+
         if path != "/api/upload":
             self.send_error_text(404, "Нет такой страницы.")
             return
@@ -438,6 +503,55 @@ class Handler(BaseHTTPRequestHandler):
             self.send_error_text(404, "Заметка не найдена.")
             return
         self.send_json({"ok": True})
+
+    def read_json_body(self, empty_text: str) -> dict | None:
+        """Читает JSON-тело запроса; при ошибке отвечает и возвращает None."""
+        length = int(self.headers.get("Content-Length") or 0)
+        if length <= 0:
+            self.send_error_text(400, empty_text)
+            return None
+        if length > MAX_NOTE_BYTES:
+            self.send_error_text(413, "Слишком длинный запрос.")
+            return None
+        try:
+            data = json.loads(self.rfile.read(length) or b"{}")
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            self.send_error_text(400, "Не смог прочитать данные.")
+            return None
+        return data if isinstance(data, dict) else {}
+
+    def save_mark(self, idea_id: int) -> None:
+        """Оценка идеи: {"verdict": "right" | "wrong" | ""}."""
+        if not idea_exists(idea_id):
+            self.send_error_text(404, "Идея не найдена.")
+            return
+        data = self.read_json_body("Пустой запрос.")
+        if data is None:
+            return
+        verdict = str(data.get("verdict") or "").strip().lower()
+        if verdict not in ("", "right", "wrong"):
+            self.send_error_text(400, "Оценка должна быть right, wrong или пустой.")
+            return
+        set_verdict(idea_id, verdict)
+        self.send_json({"ok": True, "verdict": verdict})
+
+    def save_edit(self, idea_id: int) -> None:
+        """Исправление идеи: {"idea": "новый текст"}."""
+        if not idea_exists(idea_id):
+            self.send_error_text(404, "Идея не найдена.")
+            return
+        data = self.read_json_body("Пустой запрос.")
+        if data is None:
+            return
+        text = str(data.get("idea") or "").strip()
+        if not text:
+            self.send_error_text(400, "Идея не может быть пустой.")
+            return
+        if len(text) > MAX_IDEA_CHARS:
+            self.send_error_text(413, f"Идея длиннее {MAX_IDEA_CHARS} символов.")
+            return
+        edit_idea(idea_id, text)
+        self.send_json({"ok": True, "idea": text})
 
     def save_note(self, idea_id: int) -> None:
         """Новая заметка к идее: JSON {"text": "..."}."""
