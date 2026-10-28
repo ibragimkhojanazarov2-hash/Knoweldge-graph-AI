@@ -437,6 +437,80 @@
   }
   .p-edit textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
   .p-edit-actions { display: flex; gap: 6px; }
+  /* Мосты: межкнижные связи карточками, сгруппированные по смыслу. */
+  .bridges { max-width: 980px; margin: 0 auto; }
+  .bridges .lead { margin-bottom: 22px; }
+  .bridges-controls {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px;
+    padding: 0 0 22px; border-bottom: 1px solid var(--line);
+  }
+  .bridges-label { color: var(--ink-muted); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
+  .bridges-controls .hint { margin: 0 0 0 auto; }
+  .seg {
+    display: inline-flex; gap: 4px; padding: 3px;
+    border: 1px solid var(--line); border-radius: 999px; background: var(--surface);
+  }
+  .seg button {
+    border: 0; border-radius: 999px; background: none; color: var(--ink-muted);
+    font: inherit; font-size: 12px; padding: 6px 12px; cursor: pointer;
+  }
+  .seg button.on { background: var(--accent); color: #FFF8F2; }
+  .bgroup { margin-top: 34px; }
+  .bgroup-head {
+    display: flex; align-items: center; gap: 9px; margin: 0 0 14px;
+    font-family: var(--sans); font-size: 13px; font-weight: 600;
+    letter-spacing: .1em; text-transform: uppercase;
+  }
+  .bgroup-icon { font-size: 15px; letter-spacing: 0; }
+  .bgroup-count {
+    margin-left: auto; color: var(--ink-muted);
+    font-size: 12px; font-weight: 400; letter-spacing: 0; text-transform: none;
+  }
+  .bridge {
+    margin-bottom: 14px; padding: 20px 22px;
+    border: 1px solid var(--line); border-radius: 16px; background: var(--surface);
+  }
+  .bridge-pair { display: grid; grid-template-columns: 1fr 108px 1fr; gap: 18px; align-items: start; }
+  .bridge-book {
+    display: flex; align-items: center; gap: 6px; margin: 0 0 6px;
+    color: var(--ink-muted); font-size: 11px;
+  }
+  .bridge-title { margin: 0 0 8px; font-family: var(--serif); font-weight: 400; font-size: 19px; line-height: 1.25; }
+  .bridge-quote {
+    margin: 0; padding: 10px 12px;
+    border-left: 3px solid var(--line);
+    background: var(--bg); border-radius: 0 8px 8px 0;
+    font-family: var(--serif); font-size: 14px; line-height: 1.45;
+  }
+  .bridge-mid {
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+    padding-top: 24px; text-align: center;
+  }
+  .bridge-icon { font-size: 18px; }
+  .bridge-type { font-size: 11px; letter-spacing: .04em; }
+  .bridge-conf { color: var(--ink-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+  .bridge-foot {
+    display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px;
+    margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line);
+  }
+  .bridge-why { flex: 1 1 320px; margin: 0; font-size: 13px; line-height: 1.45; color: var(--ink-muted); }
+  .bridge-why b { color: var(--ink); font-weight: 600; }
+  .bridge-open {
+    padding: 7px 12px; border: 1px solid var(--line); border-radius: 999px;
+    background: var(--surface); color: var(--ink);
+    font: inherit; font-size: 12px; white-space: nowrap; cursor: pointer;
+  }
+  .bridge-open:hover { border-color: var(--ink-muted); }
+  .bridge-empty {
+    padding: 26px 20px; border: 1px dashed var(--line); border-radius: 14px;
+    color: var(--ink-muted); font-size: 14px; text-align: center;
+  }
+  @media (max-width: 860px) {
+    .bridge { padding: 16px; }
+    .bridge-pair { grid-template-columns: 1fr; gap: 10px; }
+    .bridge-mid { flex-direction: row; justify-content: flex-start; padding: 0; gap: 8px; }
+    .bridges-controls .hint { margin-left: 0; }
+  }
   @media (max-width: 860px) {
     .map-screen { grid-template-columns: 1fr; }
     .map-filters {
@@ -465,6 +539,7 @@
   <div class="top-actions">
     <a class="nav-link" id="libLink" href="#/">Библиотека</a>
     <a class="nav-link" id="mapLink" href="#/map">Карта</a>
+    <a class="nav-link" id="bridgesLink" href="#/bridges">Мосты</a>
     <button class="icon-btn" id="themeBtn" type="button" title="Светлая или тёмная тема">◐</button>
   </div>
 </header>
@@ -477,6 +552,7 @@
   const themeBtn = document.getElementById("themeBtn");
   const libLink = document.getElementById("libLink");
   const mapLink = document.getElementById("mapLink");
+  const bridgesLink = document.getElementById("bridgesLink");
   const fileInput = document.getElementById("file");
 
   const pageBase = location.pathname.endsWith("/") ? location.pathname : location.pathname + "/";
@@ -1117,9 +1193,6 @@
       + '<div class="fgroup"><label class="frow"><input type="checkbox" id="allIdeas"'
       + (state.allLoaded ? " checked" : "") + (state.loading ? " disabled" : "")
       + '><span>Показать все идеи</span></label>'
-      + '<p class="fnote">' + (state.allLoaded
-        ? "Все идеи, включая одиночные."
-        : "Только идеи со связями — чтобы карта не была кашей.") + '</p>'
       + '</div>';
   }
 
@@ -1721,12 +1794,177 @@
     }
   }
 
+  const BRIDGE_GROUPS = [
+    { key: "agree", title: "Согласны", icon: "✓", color: "var(--supports)", types: ["supports", "same"] },
+    { key: "disagree", title: "Спорят", icon: "⚔", color: "var(--contradicts)", types: ["contradicts"] },
+    { key: "develop", title: "Развивают", icon: "➕", color: "var(--extends)", types: ["extends"] },
+    { key: "example", title: "Примеры", icon: "📌", color: "var(--example)", types: ["example"] },
+  ];
+  let bridgeSort = "desc";   // "desc" — сначала самые уверенные
+  let bridgePairs = [];
+  let pendingBridge = null;  // пара, которую надо открыть на карте
+
+  function bridgeCard(link, first, second, colorOf) {
+    const style = LINK_STYLES[link.type] || LINK_STYLES.same;
+    const side = (idea) => '<div class="bridge-side">'
+      + '<p class="bridge-book"><span class="fdot" style="background:'
+      + (colorOf.get(idea.book_id) || "var(--book-a)") + '"></span>'
+      + esc(shortText(idea.book_title, 34)) + ' · глава ' + esc(idea.chapter) + '</p>'
+      + '<h3 class="bridge-title">' + esc(idea.title || shortText(idea.idea, 60)) + '</h3>'
+      + (idea.quote ? '<blockquote class="bridge-quote">«' + esc(idea.quote) + '»</blockquote>' : "")
+      + '</div>';
+    return ''
+      + '<article class="bridge" data-link="' + link.from_id + '-' + link.to_id + '">'
+      + '<div class="bridge-pair">'
+      + side(first)
+      + '<div class="bridge-mid" style="color:' + style.color + '">'
+      + '<span class="bridge-icon">' + style.icon + '</span>'
+      + '<span class="bridge-type">' + esc(LINK_TYPES[link.type] || link.type) + '</span>'
+      + '<span class="bridge-conf" title="уверенность связи">'
+      + Math.round(Number(link.confidence) * 100) + '%</span>'
+      + '</div>'
+      + side(second)
+      + '</div>'
+      + '<footer class="bridge-foot">'
+      + (link.explanation
+        ? '<p class="bridge-why"><b>Почему связаны:</b> ' + esc(link.explanation) + '</p>'
+        : "")
+      + '<button type="button" class="bridge-open" data-open-pair="'
+      + link.from_id + '-' + link.to_id + '">На карте →</button>'
+      + '</footer>'
+      + '</article>';
+  }
+
+  function renderBridgeList() {
+    const list = document.getElementById("bridgeList");
+    if (!list) return;
+    const colorOf = new Map();
+    const booksOrder = [...new Set(bridgePairs.map((pair) => pair.first.book_id))];
+    bridgePairs.forEach((pair) => {
+      [pair.first, pair.second].forEach((idea) => {
+        if (!booksOrder.includes(idea.book_id)) booksOrder.push(idea.book_id);
+      });
+    });
+    booksOrder.forEach((id, index) => colorOf.set(id, "var(" + BOOK_VARS[index % BOOK_VARS.length] + ")"));
+
+    list.innerHTML = BRIDGE_GROUPS.map((group) => {
+      const items = bridgePairs
+        .filter((pair) => group.types.includes(pair.link.type))
+        .sort((a, b) => {
+          const left = Number(a.link.confidence);
+          const right = Number(b.link.confidence);
+          return bridgeSort === "asc" ? left - right : right - left;
+        });
+      return '<section class="bgroup">'
+        + '<h2 class="bgroup-head" style="color:' + group.color + '">'
+        + '<span class="bgroup-icon">' + group.icon + '</span>' + group.title
+        + '<span class="bgroup-count">' + items.length + '</span></h2>'
+        + (items.length
+          ? items.map((pair) => bridgeCard(pair.link, pair.first, pair.second, colorOf)).join("")
+          : '<p class="bridge-empty">Связей этого вида нет.</p>')
+        + '</section>';
+    }).join("");
+
+    list.querySelectorAll("[data-open-pair]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const [from, to] = button.dataset.openPair.split("-").map(Number);
+        pendingBridge = { from, to };
+        if (location.hash === "#/map") showMap();
+        else location.hash = "#/map";
+      });
+    });
+
+    const hint = document.getElementById("bridgesCount");
+    if (hint) hint.textContent = "Связей между книгами: " + bridgePairs.length;
+  }
+
+  async function showBridges() {
+    app.classList.remove("map-main");
+    mapLink.classList.remove("active");
+    libLink.classList.remove("active");
+    bridgesLink.classList.add("active");
+    app.innerHTML = ''
+      + '<section class="bridges">'
+      + '<h1>Мосты</h1>'
+      + '<p class="lead">Связи между книгами: где авторы согласны, спорят, '
+      + 'развивают мысль друг друга или приводят пример.</p>'
+      + '<div class="bridges-controls">'
+      + '<span class="bridges-label">Сортировка по уверенности</span>'
+      + '<div class="seg" id="bridgeSort" role="group" aria-label="Сортировка по уверенности">'
+      + '<button type="button" data-sort="desc"' + (bridgeSort === "desc" ? ' class="on"' : "")
+      + '>Сначала уверенные</button>'
+      + '<button type="button" data-sort="asc"' + (bridgeSort === "asc" ? ' class="on"' : "")
+      + '>Сначала сомнительные</button>'
+      + '</div>'
+      + '<span class="hint" id="bridgesCount"></span>'
+      + '</div>'
+      + '<div id="bridgeList"><p class="empty">Собираю связи…</p></div>'
+      + '</section>';
+
+    const section = app.querySelector(".bridges");
+    let graph = null;
+    try {
+      graph = await api("api/graph");
+    } catch (error) {
+      if (section.isConnected) {
+        document.getElementById("bridgeList").innerHTML =
+          '<p class="empty">' + esc(error.message) + '</p>';
+      }
+      return;
+    }
+    if (!section.isConnected) return;
+    const byId = new Map(graph.ideas.map((idea) => [Number(idea.id), idea]));
+    bridgePairs = graph.links
+      .filter((link) => byId.has(Number(link.from_id)) && byId.has(Number(link.to_id)))
+      .map((link) => ({
+        link,
+        first: byId.get(Number(link.from_id)),
+        second: byId.get(Number(link.to_id)),
+      }));
+    renderBridgeList();
+
+    document.querySelectorAll("#bridgeSort [data-sort]").forEach((button) => {
+      button.addEventListener("click", () => {
+        bridgeSort = button.dataset.sort;
+        document.querySelectorAll("#bridgeSort [data-sort]").forEach((item) => {
+          item.classList.toggle("on", item.dataset.sort === bridgeSort);
+        });
+        renderBridgeList();
+      });
+    });
+  }
+
+  function openPendingBridge() {
+    if (!pendingBridge) return;
+    const pair = pendingBridge;
+    pendingBridge = null;
+    if (!mapState) return;
+    const link = mapState.links.find((item) => {
+      const from = Number(item.from_id);
+      const to = Number(item.to_id);
+      return (from === pair.from && to === pair.to) || (from === pair.to && to === pair.from);
+    });
+    if (!link) return;
+    // Фильтры могли спрятать эту связь — включаем её тип, книгу и уверенность.
+    const byId = new Map(mapState.graph.ideas.map((idea) => [Number(idea.id), idea]));
+    mapState.types.add(link.type);
+    [link.from_id, link.to_id].forEach((id) => {
+      const idea = byId.get(Number(id));
+      if (idea) mapState.bookIds.add(idea.book_id);
+    });
+    if (Number(link.confidence) < mapState.minConf) mapState.minConf = Number(link.confidence);
+    renderMapScreen();
+    selectLink(pair.from, pair.to);
+  }
+
   async function showMap() {
     app.classList.add("map-main");
     mapLink.classList.add("active");
     libLink.classList.remove("active");
+    bridgesLink.classList.remove("active");
     if (mapState) {
       renderMapScreen();
+      openPendingBridge();
       return;
     }
     app.innerHTML = '<div class="map-screen"><div class="map-canvas">'
@@ -1740,15 +1978,22 @@
       return;
     }
     renderMapScreen();
+    openPendingBridge();
   }
 
   function route() {
     const onMap = location.hash === "#/map";
+    const onBridges = location.hash === "#/bridges";
     app.classList.toggle("map-main", onMap);
     mapLink.classList.toggle("active", onMap);
-    libLink.classList.toggle("active", !onMap);
+    bridgesLink.classList.toggle("active", onBridges);
+    libLink.classList.toggle("active", !onMap && !onBridges);
     if (onMap) {
       showMap();
+      return;
+    }
+    if (onBridges) {
+      showBridges();
       return;
     }
     const idea = location.hash.match(/^#\/idea\/(\d+)$/);
