@@ -439,6 +439,12 @@
   /* Мосты: межкнижные связи карточками, сгруппированные по смыслу. */
   .bridges { max-width: 980px; margin: 0 auto; }
   .bridges .lead { margin-bottom: 22px; }
+  .bridges-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+  /* На телефоне карта тяжёлая, поэтому она открывается кнопкой из «Мостов». */
+  .bridges-open-map { display: none; flex: none; align-self: flex-start; }
+  @media (max-width: 700px) {
+    .bridges-open-map { display: inline-flex; }
+  }
   .bridges-controls {
     display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px;
     padding: 0 0 22px; border-bottom: 1px solid var(--line);
@@ -523,7 +529,11 @@
     .map-panel { z-index: 8; width: min(340px, calc(100% - 28px)); }
   }
   @media (max-width: 720px) {
-    .top { padding: 12px 18px; }
+    .top { padding: 12px 14px; gap: 12px; }
+    .brand { font-size: 14px; }
+    .top-actions { gap: 4px; }
+    .nav-link { padding: 6px 8px; font-size: 12px; }
+    .icon-btn { width: 32px; height: 32px; }
     main { padding: 28px 18px 60px; }
     h1 { font-size: 32px; }
     .book-head { flex-direction: column; gap: 22px; }
@@ -1883,7 +1893,10 @@
     bridgesLink.classList.add("active");
     app.innerHTML = ''
       + '<section class="bridges">'
+      + '<div class="bridges-head">'
       + '<h1>Мосты</h1>'
+      + '<a class="btn bridges-open-map" href="#/map">Карта</a>'
+      + '</div>'
       + '<p class="lead">Связи между книгами: где авторы согласны, спорят, '
       + 'развивают мысль друг друга или приводят пример.</p>'
       + '<div class="bridges-controls">'
@@ -2015,6 +2028,9 @@
     applyTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark");
   });
   applyTheme(localStorage.getItem("theme") || "light");
+
+  // На телефоне карта не помещается, поэтому сразу открываем «Мосты».
+  if (!location.hash && window.innerWidth < 700) location.hash = "#/bridges";
 
   window.addEventListener("hashchange", route);
   route();
