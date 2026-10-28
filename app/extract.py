@@ -7,6 +7,11 @@
 
 Запуск: python3 app/extract.py <book_id> <глава|all>
         all — все главы книги по порядку; идеи каждой главы сохраняются сразу.
+        clean — удалить идеи служебных глав книги и все связи с ними.
+
+Служебные главы (титул, благодарности, об авторе, примечания, содержание,
+а также любая глава короче 1500 знаков) не разбираются на идеи: мыслей книги
+в них нет, а модель всё равно что-нибудь да придумает.
 """
 from __future__ import annotations
 
@@ -59,6 +64,34 @@ def parse_ideas(answer: str) -> list[dict]:
 
 
 MIN_RATIO = 0.9  # насколько цитата должна быть похожа на текст главы
+
+SERVICE_MIN = 1500  # глава короче этого — служебная
+
+# Служебные главы: заголовок говорит сам за себя.
+SERVICE_TITLES = (
+    "титул", "благодар", "об авторе", "примечани", "содержание", "оглавление",
+    "посвящение", "колофон", "copyright", "contents", "acknowledg", "about the author",
+    "notes", "title page", "index",
+)
+
+
+def service_reason(chapter: dict) -> str | None:
+    """Почему глава служебная (None — обычная глава с текстом книги).
+
+    chapter — строка из get_book (idx, title, chars) или из get_chapter (idx, title, text).
+    """
+    if not isinstance(chapter, dict):
+        chapter = dict(chapter)
+    title = " ".join((chapter.get("title") or "").lower().split())
+    for word in SERVICE_TITLES:
+        if word in title:
+            return f"служебный заголовок «{chapter['title']}»"
+    chars = chapter.get("chars")
+    if chars is None:
+        chars = len((chapter.get("text") or "").strip())
+    if chars < SERVICE_MIN:
+        return f"короткая глава, {chars} знаков"
+    return None
 
 
 def squash(text: str) -> tuple[str, list[int]]:
@@ -197,20 +230,75 @@ def extract_chapter(book_id: str, chapter: dict) -> tuple[int, int]:
     return len(ideas), dropped
 
 
+def clean_service(book_id: str) -> None:
+    """Удаляет идеи служебных глав книги и все связи, которые на них ссылаются."""
+    with connect() as db:
+        chapters = db.execute(
+            "SELECT idx, title, length(text) AS chars FROM chapters"
+            " WHERE book_id = ? ORDER BY idx", (book_id,)
+        ).fetchall()
+        if not chapters:
+            print(f"Книга {book_id} не найдена.", file=sys.stderr)
+            raise SystemExit(1)
+        service = [(c["idx"], service_reason(dict(c))) for c in chapters]
+        service = [(idx, reason) for idx, reason in service if reason]
+        if not service:
+            print("Служебных глав нет, чистить нечего.", flush=True)
+            return
+        for idx, reason in service:
+            print(f"Служебная глава {idx}: {reason}", flush=True)
+        marks = ",".join("?" * len(service))
+        idea_ids = [row[0] for row in db.execute(
+            f"SELECT id FROM ideas WHERE book_id = ? AND chapter IN ({marks})",
+            (book_id, *(idx for idx, _ in service)),
+        )]
+        links = key_ideas = 0
+        if idea_ids:
+            id_marks = ",".join("?" * len(idea_ids))
+            links = db.execute(
+                f"DELETE FROM links WHERE from_id IN ({id_marks}) OR to_id IN ({id_marks})",
+                (*idea_ids, *idea_ids),
+            ).rowcount
+            db.execute(
+                f"DELETE FROM link_marks WHERE from_id IN ({id_marks}) OR to_id IN ({id_marks})",
+                (*idea_ids, *idea_ids),
+            )
+            db.execute(f"DELETE FROM idea_marks WHERE idea_id IN ({id_marks})", idea_ids)
+            db.execute(f"DELETE FROM notes WHERE idea_id IN ({id_marks})", idea_ids)
+            db.execute(f"DELETE FROM ideas WHERE id IN ({id_marks})", idea_ids)
+        key_ideas = db.execute(
+            f"DELETE FROM key_ideas WHERE book_id = ? AND chapter IN ({marks})",
+            (book_id, *(idx for idx, _ in service)),
+        ).rowcount
+    print(f"Удалено: идей {len(idea_ids)}, связей {links}, ключевых идей {key_ideas}.", flush=True)
+
+
 def main() -> None:
     if len(sys.argv) != 3:
-        print("Запуск: python3 app/extract.py <book_id> <глава|all>", file=sys.stderr)
+        print("Запуск: python3 app/extract.py <book_id> <глава|all|clean>", file=sys.stderr)
         raise SystemExit(2)
     book_id, where = sys.argv[1], sys.argv[2]
 
     init_db()
+    book = get_book(book_id)
+    if book is None:
+        print(f"Книга {book_id} не найдена.", file=sys.stderr)
+        raise SystemExit(1)
+    print(f"Книга «{book['title']}»: глав {len(book['chapters'])}", flush=True)
+
+    if where == "clean":
+        clean_service(book_id)
+        return
+
     if where == "all":
-        book = get_book(book_id)
-        if book is None:
-            print(f"Книга {book_id} не найдена.", file=sys.stderr)
-            raise SystemExit(1)
-        indexes = [c["idx"] for c in book["chapters"]]
-        print(f"Книга «{book['title']}»: глав {len(indexes)}", flush=True)
+        indexes = []
+        for chapter in book["chapters"]:
+            reason = service_reason(chapter)
+            if reason:
+                print(f"Пропускаю главу {chapter['idx']} «{chapter['title']}»: {reason}", flush=True)
+                continue
+            indexes.append(chapter["idx"])
+        print(f"К разбору глав: {len(indexes)}", flush=True)
     else:
         indexes = [int(where)]
 
@@ -220,6 +308,10 @@ def main() -> None:
         if chapter is None:
             print(f"Глава {chapter_idx} книги {book_id} не найдена.", file=sys.stderr)
             raise SystemExit(1)
+        reason = service_reason(chapter)
+        if reason:
+            print(f"\n[{number}/{len(indexes)}] глава {chapter_idx}: пропускаю, {reason}", flush=True)
+            continue
         print(f"\n[{number}/{len(indexes)}] глава {chapter_idx}", flush=True)
         kept, lost = extract_chapter(book_id, chapter)
         total += kept
