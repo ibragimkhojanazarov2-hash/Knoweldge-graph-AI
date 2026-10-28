@@ -208,8 +208,42 @@ def get_book(book_id: str) -> dict | None:
             "SELECT idx, title, length(text) AS chars FROM chapters"
             " WHERE book_id = ? ORDER BY idx", (book_id,)
         ).fetchall()
+        key_count = db.execute(
+            "SELECT COUNT(*) FROM key_ideas WHERE book_id = ?", (book_id,)
+        ).fetchone()[0]
+        link_count, contradiction_count = db.execute(
+            "SELECT COUNT(*), COUNT(CASE WHEN type = 'contradicts' THEN 1 END)"
+            " FROM links WHERE from_id IN (SELECT id FROM ideas WHERE book_id = ?)"
+            " OR to_id IN (SELECT id FROM ideas WHERE book_id = ?)",
+            (book_id, book_id),
+        ).fetchone()
+        idea_counts = {
+            row[0]: row[1] for row in db.execute(
+                "SELECT chapter, COUNT(*) FROM ideas WHERE book_id = ? GROUP BY chapter",
+                (book_id,),
+            )
+        }
+        link_counts = {
+            row[0]: row[1] for row in db.execute(
+                "SELECT chapter, COUNT(*) FROM ("
+                " SELECT l.id, i.chapter FROM links l"
+                " JOIN ideas i ON i.id = l.from_id WHERE i.book_id = ?"
+                " UNION"
+                " SELECT l.id, i.chapter FROM links l"
+                " JOIN ideas i ON i.id = l.to_id WHERE i.book_id = ?"
+                ") GROUP BY chapter",
+                (book_id, book_id),
+            )
+        }
     result = dict(book)
-    result["chapters"] = [dict(row) for row in chapters]
+    result["key_count"] = key_count
+    result["link_count"] = link_count
+    result["contradiction_count"] = contradiction_count
+    result["chapters"] = [
+        {**dict(row), "ideas": idea_counts.get(row["idx"], 0),
+         "links": link_counts.get(row["idx"], 0)}
+        for row in chapters
+    ]
     return result
 
 

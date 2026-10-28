@@ -174,6 +174,10 @@
   .facts { display: flex; gap: 28px; flex-wrap: wrap; margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--line); }
   .fact b { display: block; font-family: var(--serif); font-size: 22px; font-weight: 400; }
   .fact span { color: var(--ink-muted); font-size: 13px; }
+  .book-about {
+    margin: 20px 0 0; max-width: 64ch;
+    color: var(--ink-muted); font-size: 15px; line-height: 1.65;
+  }
   .chapters { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
   .chapter-row {
     display: flex; align-items: baseline; gap: 16px;
@@ -580,11 +584,21 @@
     })[ch]);
   }
 
-  function chaptersWord(n) {
+  function plural(n, one, few, many) {
     const ten = n % 10, hundred = n % 100;
-    if (ten === 1 && hundred !== 11) return "глава";
-    if (ten >= 2 && ten <= 4 && (hundred < 12 || hundred > 14)) return "главы";
-    return "глав";
+    if (ten === 1 && hundred !== 11) return one;
+    if (ten >= 2 && ten <= 4 && (hundred < 12 || hundred > 14)) return few;
+    return many;
+  }
+
+  function chaptersWord(n) { return plural(n, "глава", "главы", "глав"); }
+  function ideasWord(n) { return plural(n, "идея", "идеи", "идей"); }
+  function linksWord(n) { return plural(n, "связь", "связи", "связей"); }
+
+  // Первые предложения конспекта — короткая выжимка справа от обложки.
+  function firstSentences(text, limit) {
+    const parts = String(text || "").match(/[^.!?…]+[.!?…]+|[^.!?…]+$/g) || [];
+    return parts.slice(0, limit).join(" ").replace(/\s+/g, " ").trim();
   }
 
   function number(n) {
@@ -689,7 +703,7 @@
         <button class="chapter-row" type="button" data-chapter="${chapter.idx}">
           <span class="num">${String(chapter.idx).padStart(2, "0")}</span>
           <span class="name">${esc(chapter.title)}</span>
-          <span class="size">${number(chapter.chars)} зн.</span>
+          <span class="size">${chapter.ideas} ${ideasWord(chapter.ideas)} · ${chapter.links} ${linksWord(chapter.links)}</span>
         </button>
       </li>`).join("");
 
@@ -722,9 +736,12 @@
           <p class="book-author">${esc(book.author || "Автор не указан")}</p>
           <div class="facts">
             <div class="fact"><b>${book.chapter_count}</b><span>${chaptersWord(book.chapter_count)}</span></div>
-            <div class="fact"><b>${number(book.char_count)}</b><span>знаков</span></div>
+            <div class="fact"><b>${book.key_count}</b><span>${plural(book.key_count, "ключевая идея", "ключевые идеи", "ключевых идей")}</span></div>
+            <div class="fact"><b>${book.link_count}</b><span>${linksWord(book.link_count)}</span></div>
+            <div class="fact"><b>${book.contradiction_count}</b><span>${plural(book.contradiction_count, "противоречие", "противоречия", "противоречий")}</span></div>
             <div class="fact"><b>${esc((book.lang || "—").toUpperCase())}</b><span>язык</span></div>
           </div>
+          ${summary ? `<p class="book-about">${esc(firstSentences(summary.about, 3))}</p>` : ""}
         </div>
       </section>
       <div class="tabs" role="tablist">
