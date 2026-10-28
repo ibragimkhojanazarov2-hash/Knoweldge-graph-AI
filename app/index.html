@@ -4,6 +4,17 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Marginalia — библиотека</title>
+<script>
+  // Тему ставим до отрисовки: иначе в тёмной системе страница мигнёт белым.
+  (function () {
+    const system = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    try {
+      document.documentElement.dataset.theme = localStorage.getItem("theme") || system;
+    } catch (error) {
+      document.documentElement.dataset.theme = system;
+    }
+  })();
+</script>
 <style>
   :root {
     --bg: #F7F3EC;
@@ -2129,14 +2140,16 @@
     if (fileInput.files.length) uploadBook(fileInput.files[0]);
   });
 
-  function applyTheme(theme) {
+  // Сохраняем выбор только по кнопке: пока её не нажали, тема следует системе.
+  function applyTheme(theme, remember) {
     document.documentElement.dataset.theme = theme;
-    localStorage.setItem("theme", theme);
+    if (remember) localStorage.setItem("theme", theme);
   }
   themeBtn.addEventListener("click", () => {
-    applyTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark");
+    applyTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark", true);
   });
-  applyTheme(localStorage.getItem("theme") || "light");
+  const systemTheme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  applyTheme(localStorage.getItem("theme") || systemTheme, false);
 
   // На телефоне карта не помещается, поэтому сразу открываем «Мосты».
   if (!location.hash && window.innerWidth < 700) location.hash = "#/bridges";
