@@ -21,6 +21,7 @@ from server import connect, get_book, init_db, list_books
 
 TOP_CANDIDATES = 3   # сколько идей из других книг проверять у одной идеи
 BATCH_IDEAS = 6      # сколько идей-источников в одном запросе
+VERIFY_BATCH = 8     # сколько связей «противоречит» проверять за один запрос
 MIN_CONFIDENCE = 0.75  # ниже — связь не сохраняем
 MAX_LINKS_PER_IDEA = 3  # не больше трёх лучших связей у одной идеи
 
@@ -60,12 +61,45 @@ PROMPT = """Ты ищешь связи между идеями из разных
 Будь строгим: связь должна быть очевидной, если прочитать обе идеи рядом.
 Если сомневаешься — пару не включай. Не больше одной связи из каждого источника.
 
+Оценивай уверенность по одной шкале:
+- 0.6 — слабая тематическая перекличка: общая тема, но общей мысли нет;
+- 0.8 — явная связь: идеи действительно подтверждают, развивают или
+  иллюстрируют друг друга;
+- 0.95 — почти одна и та же мысль, сформулированная по-разному.
+Ставь промежуточное значение, если связь между этими точками.
+В список включай только пары с уверенностью не ниже 0.75.
+
 Ответь только JSON-массивом, без другого текста:
 [{{"pair": "S1-C1", "type": "supports", "explanation": "1–2 предложения по-русски", "confidence": 0.8}}]
 
-confidence — от 0 до 1, насколько ты уверен. Включай только пары с уверенностью
-не ниже 0.75 (0.9 — связь очевидна, 0.75 — почти наверняка).
 В explanation не упоминай номера S1 и C1 — пиши сразу про сами идеи."""
+
+VERIFY_PROMPT = """Ты проверяешь связи типа «противоречит» между идеями из разных книг.
+
+Пары:
+{pairs}
+
+Для каждой пары сначала сформулируй question — ОДИН общий вопрос, на который
+отвечают обе идеи. Затем реши: говорит ли одна идея «да», а другая «нет»
+на этот же вопрос?
+- opposite: true — только если общий вопрос действительно один и ответы
+  прямо противоположны (одно утверждает X, другое — не-X);
+- opposite: false — если идеи отвечают на разные вопросы, говорят о разных
+  сторонах одного явления, разный контекст или общая только тема.
+- Разная оценка одного и того же (один хвалит, другой ругает) — это НЕ прямое
+  противоречие, если они не утверждают взаимоисключающее.
+- Если сомневаешься — false.
+Если opposite=false, назови настоящий тип связи: supports (подтверждает),
+extends (развивает), example (пример к), same (то же самое) или none
+(связи нет — пару надо удалить).
+why — 1–2 предложения по-русски: почему да или нет; если нет, объясни,
+в чём настоящая связь.
+
+Уверенность — по той же шкале: 0.6 — слабая тематическая перекличка,
+0.8 — явная связь, 0.95 — почти одна и та же мысль.
+
+Ответь только JSON-массивом, без другого текста:
+[{{"pair": "P1", "question": "общий вопрос", "opposite": true, "why": "1–2 предложения", "type": "contradicts", "confidence": 0.8}}]"""
 
 
 def word_keys(text: str) -> set[str]:
@@ -107,6 +141,112 @@ def build_prompt(title: str, batch: list[tuple[dict, list[dict]]]) -> tuple[str,
         candidates="\n".join(candidate_lines),
     )
     return prompt, labels
+
+
+def build_verify_prompt(batch: list[dict], ideas: dict[int, str]) -> tuple[str, dict[str, tuple[int, int]]]:
+    """Текст второго запроса и ярлыки проверяемых связей."""
+    labels: dict[str, tuple[int, int]] = {}
+    lines = []
+    for number, link in enumerate(batch, 1):
+        pair = (link["from_id"], link["to_id"])
+        labels[f"P{number}"] = pair
+        lines.append(
+            f"P{number}.\n"
+            f"Источник: {ideas[link['from_id']]}\n"
+            f"Кандидат: {ideas[link['to_id']]}\n"
+            f"Почему модель считает это противоречием: {link['explanation']}"
+        )
+    return VERIFY_PROMPT.format(pairs="\n\n".join(lines)), labels
+
+
+def parse_verdicts(answer: str, labels: dict[str, tuple[int, int]]) -> dict[tuple[int, int], dict]:
+    """Достаёт из ответа модели решения по парам «противоречит»."""
+    start, end = answer.find("["), answer.rfind("]")
+    if start == -1 or end <= start:
+        raise ValueError("В ответе модели нет JSON-массива:\n" + answer[:400])
+    data = json.loads(answer[start:end + 1])
+    if not isinstance(data, list):
+        raise ValueError("Модель вернула не список решений.")
+    verdicts: dict[tuple[int, int], dict] = {}
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        match = re.fullmatch(r"\s*P(\d+)\s*", str(item.get("pair") or ""))
+        if not match:
+            continue
+        pair = labels.get(f"P{match.group(1)}")
+        if pair is None:
+            continue
+        opposite = item.get("opposite")
+        if isinstance(opposite, str):
+            opposite = opposite.strip().lower() in {"true", "да", "yes", "1"}
+        if not isinstance(opposite, bool):
+            continue
+        kind = str(item.get("type") or "").strip().lower()
+        why = str(item.get("why") or "").strip()
+        try:
+            confidence = float(item.get("confidence"))
+        except (TypeError, ValueError):
+            continue
+        if not why:
+            continue
+        verdicts[pair] = {
+            "opposite": opposite,
+            "type": kind,
+            "why": why,
+            "confidence": round(min(max(confidence, 0.0), 1.0), 2),
+        }
+    return verdicts
+
+
+def verify_contradictions(links: list[dict]) -> list[dict]:
+    """Второй запрос для «противоречит»: правда ли авторы говорят обратное.
+
+    Если модель отвечает «нет», связь получает настоящий тип или удаляется.
+    """
+    targets = [link for link in links if link["type"] == "contradicts"]
+    if not targets:
+        return links
+    with connect() as db:
+        ideas = {row["id"]: row["idea"] for row in db.execute("SELECT id, idea FROM ideas")}
+    verdicts: dict[tuple[int, int], dict] = {}
+    batches = [targets[start:start + VERIFY_BATCH] for start in range(0, len(targets), VERIFY_BATCH)]
+    print(f"Проверяю «противоречит»: {len(targets)} связей, запросов {len(batches)}", flush=True)
+    for number, batch in enumerate(batches, 1):
+        prompt, labels = build_verify_prompt(batch, ideas)
+        found = parse_verdicts(chat([{"role": "user", "content": prompt}]), labels)
+        verdicts.update(found)
+        print(f"  проверка {number} из {len(batches)}: решений {len(found)}", flush=True)
+
+    result: list[dict] = []
+    kept = changed = deleted = 0
+    for link in links:
+        pair = (link["from_id"], link["to_id"])
+        verdict = verdicts.get(pair)
+        if link["type"] != "contradicts" or verdict is None:
+            result.append(link)
+            continue
+        confidence = verdict["confidence"]
+        if confidence < MIN_CONFIDENCE:
+            deleted += 1
+            continue
+        if verdict["opposite"]:
+            result.append({**link, "explanation": verdict["why"], "confidence": confidence})
+            kept += 1
+            continue
+        kind = verdict["type"]
+        if kind not in TYPES or kind == "contradicts" or kind == "none":
+            deleted += 1
+            continue
+        result.append({
+            **link,
+            "type": kind,
+            "explanation": verdict["why"],
+            "confidence": confidence,
+        })
+        changed += 1
+    print(f"«Противоречит»: осталось {kept}, сменили тип {changed}, удалено {deleted}", flush=True)
+    return result
 
 
 def parse_links(answer: str, labels: dict[str, int]) -> list[dict]:
@@ -229,11 +369,43 @@ def links_for(book_id: str) -> int:
         print(f"  запрос {number} из {len(batches)}: связей {len(found)}", flush=True)
 
     unique = {(link["from_id"], link["to_id"]): link for link in links}
+    checked = verify_contradictions(list(unique.values()))
+    unique = {(link["from_id"], link["to_id"]): link for link in checked}
     save_links(book_id, list(unique.values()))
     print(f"Сохранено связей: {len(unique)}", flush=True)
     for link in list(unique.values())[:3]:
         print(f"- {TYPES[link['type']]} ({link['confidence']}): {link['explanation'][:160]}", flush=True)
     return len(unique)
+
+
+def print_distribution(label: str = "Итог") -> None:
+    """Показывает, сколько связей каждого типа и как легли уверенности."""
+    with connect() as db:
+        total = db.execute("SELECT COUNT(*) FROM links").fetchone()[0]
+        by_type = db.execute(
+            "SELECT type, COUNT(*) AS n FROM links GROUP BY type ORDER BY n DESC"
+        ).fetchall()
+        by_conf = db.execute(
+            "SELECT confidence, COUNT(*) AS n FROM links GROUP BY confidence ORDER BY confidence"
+        ).fetchall()
+        low, high = db.execute("SELECT MIN(confidence), MAX(confidence) FROM links").fetchone()
+    if not total:
+        print(f"{label}: связей нет", flush=True)
+        return
+    print(f"\n{label}: связей {total}", flush=True)
+    print("  по типам: " + ", ".join(
+        f"{TYPES[row['type']]} {row['n']} ({row['n'] * 100 / total:.0f}%)" for row in by_type
+    ), flush=True)
+    print("  уверенность: " + ", ".join(
+        f"{row['confidence']:.2f} — {row['n']}" for row in by_conf
+    ), flush=True)
+    buckets = [(0.75, 0.79), (0.80, 0.89), (0.90, 1.00)]
+    print("  по диапазонам: " + ", ".join(
+        f"{lo:.2f}–{hi:.2f}: "
+        f"{sum(row['n'] for row in by_conf if lo <= row['confidence'] <= hi)}"
+        for lo, hi in buckets
+    ), flush=True)
+    print(f"  минимум {low:.2f}, максимум {high:.2f}", flush=True)
 
 
 def main() -> None:
@@ -255,6 +427,7 @@ def main() -> None:
     left = trim_links()
     if where == "all":
         print(f"\nИтого связей: {total}, после отбора: {left}", flush=True)
+    print_distribution()
 
 
 if __name__ == "__main__":
