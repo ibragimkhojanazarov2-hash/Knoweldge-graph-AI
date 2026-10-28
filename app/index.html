@@ -308,16 +308,15 @@
   .frange { width: 100%; accent-color: var(--accent); margin: 4px 0 2px; }
   .fvalue { color: var(--ink-muted); font-size: 12px; display: flex; justify-content: space-between; }
   .fnote { color: var(--ink-muted); font-size: 12px; line-height: 1.4; }
-  .map-canvas { position: relative; overflow: hidden; background: var(--bg); min-width: 0; }
+  .map-main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+  .map-canvas { position: relative; overflow: hidden; background: var(--bg); min-width: 0; flex: 1; }
   #mapSvg { display: block; width: 100%; height: auto; touch-action: none; cursor: grab; }
   #mapSvg.panning { cursor: grabbing; }
   .map-tools {
-    position: absolute; left: 14px; bottom: 14px; z-index: 3;
+    flex: none;
     display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
-    padding: 6px; border-radius: 12px;
-    background: color-mix(in srgb, var(--surface) 92%, transparent);
-    border: 1px solid var(--line);
-    backdrop-filter: blur(8px);
+    padding: 8px 14px; border-top: 1px solid var(--line);
+    background: var(--surface);
   }
   .map-tools button {
     width: 30px; height: 30px;
@@ -958,6 +957,7 @@
   const MAP_MARGIN = 18;  // поля по краям карты
   const COL_GAP = 170;    // место между колонками книг — там идут дуги
   const HEAD_H = 108;     // обложка и название книги над колонкой
+  const TOOLS_H = 64;     // нижняя полоса под панель кнопок: подписи туда не заходят
   const STRONG_CONF = 0.85;  // «только сильные связи»: явная связь и выше
 
   let mapState = null;  // данные карты и настройки фильтров
@@ -1334,10 +1334,16 @@
     app.innerHTML = ''
       + '<div class="map-screen' + (open ? " filters-open" : "") + '" id="mapScreen">'
       + '<aside class="map-filters" id="mapFilters">' + filtersMarkup(ideas, links) + '</aside>'
+      + '<div class="map-main">'
       + '<div class="map-canvas" id="mapCanvas">'
       + '<svg id="mapSvg" preserveAspectRatio="xMidYMin meet" role="img" aria-label="Карта идей">'
       + '<g id="mapWorld"></g>'
       + '</svg>'
+      + (ideas.length
+        ? (links.length ? "" : '<div class="map-empty">Все связи скрыты фильтрами — остались только идеи.</div>')
+        : '<div class="map-empty">Под фильтры ничего не подошло.</div>')
+      + '<aside class="map-panel" id="mapPanel" hidden></aside>'
+      + '</div>'
       + '<div class="map-tools">'
       + '<button type="button" id="filtersBtn" title="Фильтры">Фильтры</button>'
       + '<button type="button" id="zoomIn" title="Приблизить">+</button>'
@@ -1346,10 +1352,6 @@
       + '<label><input type="checkbox" id="labelsToggle"' + (state.labels ? " checked" : "")
       + '> Подписи</label>'
       + '</div>'
-      + (ideas.length
-        ? (links.length ? "" : '<div class="map-empty">Все связи скрыты фильтрами — остались только идеи.</div>')
-        : '<div class="map-empty">Под фильтры ничего не подошло.</div>')
-      + '<aside class="map-panel" id="mapPanel" hidden></aside>'
       + '</div></div>';
     const count = document.getElementById("mapCount");
     if (count) {
