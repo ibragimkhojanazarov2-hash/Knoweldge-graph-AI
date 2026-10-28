@@ -575,6 +575,72 @@
     padding: 26px 20px; border: 1px dashed var(--line); border-radius: 14px;
     color: var(--ink-muted); font-size: 14px; text-align: center;
   }
+  /* Спросить: вопрос ко всей библиотеке, ответ модели со сносками [1], [2]. */
+  .ask { max-width: 760px; margin: 0 auto; }
+  .ask .lead { margin-bottom: 0; }
+  .ask-form { display: flex; gap: 10px; margin: 22px 0 10px; }
+  .ask-input {
+    flex: 1; min-width: 0; padding: 12px 18px;
+    border: 1px solid var(--line); border-radius: 999px;
+    background: var(--surface); color: var(--ink);
+    font: inherit; font-size: 15px;
+  }
+  .ask-input::placeholder { color: var(--ink-muted); }
+  .ask-input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  .ask-answer {
+    margin-top: 26px; padding: 22px 24px;
+    border: 1px solid var(--line); border-radius: 16px; background: var(--surface);
+  }
+  .ask-answer p {
+    margin: 0 0 12px;
+    font-family: var(--serif); font-size: 18px; line-height: 1.6;
+  }
+  .ask-answer p:last-child { margin-bottom: 0; }
+  .ask-ref {
+    color: var(--accent); text-decoration: none;
+    font-variant-numeric: tabular-nums;
+  }
+  .ask-ref:hover { text-decoration: underline; }
+  .ask-sources { margin: 30px 0 0; }
+  .ask-sources h2, .ask-next h2 {
+    margin: 0 0 10px; color: var(--ink-muted);
+    font-family: var(--sans); font-size: 11px; font-weight: 500;
+    letter-spacing: .1em; text-transform: uppercase;
+  }
+  .ask-source {
+    display: flex; gap: 12px; padding: 13px 0;
+    border-top: 1px solid var(--line);
+    color: inherit; text-decoration: none;
+  }
+  .ask-source:hover .ask-src-book { color: var(--accent); }
+  .ask-src-n { flex: none; padding-top: 1px; color: var(--ink-muted); font-size: 12px; }
+  .ask-src-body { min-width: 0; }
+  .ask-src-book {
+    color: var(--ink-muted); font-size: 11px;
+    letter-spacing: .04em; text-transform: uppercase;
+  }
+  .ask-src-quote {
+    display: block; margin: 4px 0 0;
+    font-family: var(--serif); font-size: 15px; line-height: 1.5;
+  }
+  .ask-next { margin: 30px 0 0; }
+  .ask-hints { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+  .ask-hint {
+    padding: 9px 15px; border: 1px solid var(--line); border-radius: 999px;
+    background: var(--surface); color: var(--ink);
+    font: inherit; font-size: 14px; text-align: left; cursor: pointer;
+  }
+  .ask-hint:hover { border-color: var(--accent); color: var(--accent); }
+  @media (max-width: 560px) {
+    .ask-form { flex-direction: column; }
+    .ask-form .btn { justify-content: center; }
+    .ask-answer { padding: 18px; }
+    .ask-answer p { font-size: 17px; }
+  }
+  /* Четыре пункта меню на узком телефоне не помещаются вместе с логотипом. */
+  @media (max-width: 480px) {
+    .brand { display: none; }
+  }
   @media (max-width: 860px) {
     .bridge { padding: 16px; }
     .bridge-pair { grid-template-columns: 1fr; gap: 10px; }
@@ -614,6 +680,7 @@
     <a class="nav-link" id="libLink" href="#/">Библиотека</a>
     <a class="nav-link" id="mapLink" href="#/map">Карта</a>
     <a class="nav-link" id="bridgesLink" href="#/bridges">Мосты</a>
+    <a class="nav-link" id="askLink" href="#/ask">Спросить</a>
     <button class="icon-btn" id="themeBtn" type="button" title="Светлая или тёмная тема">◐</button>
   </div>
 </header>
@@ -627,6 +694,7 @@
   const libLink = document.getElementById("libLink");
   const mapLink = document.getElementById("mapLink");
   const bridgesLink = document.getElementById("bridgesLink");
+  const askLink = document.getElementById("askLink");
   const fileInput = document.getElementById("file");
 
   const pageBase = location.pathname.endsWith("/") ? location.pathname : location.pathname + "/";
@@ -2175,6 +2243,125 @@
     });
   }
 
+  // «Спросить»: вопрос ко всей библиотеке, ответ модели со сносками [1], [2].
+  let askLast = null;  // последний ответ: возвращаемся со сноски — он на месте
+
+  function askResultHtml(data) {
+    const sources = data.sources || [];
+    const target = new Map(sources.map((source) => [String(source.n), source]));
+    const paragraphs = esc(data.answer || "").replace(/\[(\d+)\]/g, (whole, number) => {
+      const source = target.get(number);
+      return source ? '<a class="ask-ref" href="#/idea/' + source.id + '">[' + number + ']</a>' : whole;
+    }).split(/\n+/).filter((line) => line.trim())
+      .map((line) => '<p>' + line + '</p>').join("");
+
+    const sourceList = sources.map((source) => ''
+      + '<a class="ask-source" href="#/idea/' + source.id + '">'
+      + '<span class="ask-src-n">[' + source.n + ']</span>'
+      + '<span class="ask-src-body">'
+      + '<span class="ask-src-book">' + esc(source.book_title)
+      + (source.chapter_title ? ' · ' + esc(source.chapter_title) : '') + '</span>'
+      + '<span class="ask-src-quote">«' + esc(source.quote) + '»</span>'
+      + '</span></a>').join("");
+
+    const hints = (data.suggestions || []).map((hint) => ''
+      + '<button class="ask-hint" type="button" data-question="' + esc(hint) + '">'
+      + esc(hint) + '</button>').join("");
+
+    return ''
+      + '<div class="ask-answer">' + (paragraphs || '<p>Модель не дала ответа.</p>') + '</div>'
+      + (sourceList
+        ? '<div class="ask-sources"><h2>Фрагменты, на которые опирался ответ</h2>'
+          + sourceList + '</div>'
+        : '')
+      + (hints
+        ? '<div class="ask-next"><h2>Спросить дальше</h2>'
+          + '<div class="ask-hints">' + hints + '</div></div>'
+        : '');
+  }
+
+  async function runAsk(question) {
+    const result = app.querySelector("#askResult");
+    const note = app.querySelector("#askStatus");
+    const send = app.querySelector("#askSend");
+    if (!result || !send) return;
+    send.disabled = true;
+    note.textContent = "Ищу идеи и спрашиваю модель…";
+    result.innerHTML = "";
+    try {
+      const data = await api("api/ask", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question: question }),
+      });
+      if (!result.isConnected) return;
+      askLast = {
+        question: question,
+        answer: data.answer,
+        sources: data.sources,
+        suggestions: data.suggestions,
+      };
+      note.textContent = data.sources.length
+        ? "Нашлось фрагментов: " + data.sources.length
+        : "";
+      result.innerHTML = askResultHtml(data);
+    } catch (error) {
+      if (!result.isConnected) return;
+      note.textContent = "";
+      result.innerHTML = '<p class="bridge-empty">' + esc(error.message) + '</p>';
+    } finally {
+      if (send.isConnected) send.disabled = false;
+    }
+  }
+
+  function showAsk() {
+    app.classList.remove("map-main");
+    mapLink.classList.remove("active");
+    bridgesLink.classList.remove("active");
+    libLink.classList.remove("active");
+    askLink.classList.add("active");
+    app.innerHTML = ''
+      + '<section class="ask">'
+      + '<h1>Спросить библиотеку</h1>'
+      + '<p class="lead">Задайте вопрос — Marginalia найдёт 10–15 идей и цитат '
+      + 'во всех книгах, а модель ответит только по ним. Сноска [1] ведёт '
+      + 'к книге, главе и цитате.</p>'
+      + '<form class="ask-form" id="askForm">'
+      + '<input class="ask-input" id="askInput" type="text" maxlength="500" '
+      + 'placeholder="Например: в чём смысл свободы?" autocomplete="off" '
+      + 'aria-label="Вопрос к библиотеке">'
+      + '<button class="btn" id="askSend" type="submit">Спросить</button>'
+      + '</form>'
+      + '<p class="hint" id="askStatus">Ищите по словам и темам: «свобода», '
+      + '«смысл жизни», «работа и отдых».</p>'
+      + '<div id="askResult"></div>'
+      + '</section>';
+
+    const input = app.querySelector("#askInput");
+    const result = app.querySelector("#askResult");
+    if (askLast) {
+      input.value = askLast.question || "";
+      app.querySelector("#askStatus").textContent =
+        "Нашлось фрагментов: " + askLast.sources.length;
+      result.innerHTML = askResultHtml(askLast);
+    }
+
+    app.querySelector("#askForm").addEventListener("submit", (event) => {
+      event.preventDefault();
+      const question = input.value.trim();
+      if (!question) return;
+      askLast = null;
+      runAsk(question);
+    });
+    result.addEventListener("click", (event) => {
+      const hint = event.target.closest(".ask-hint");
+      if (!hint) return;
+      input.value = hint.dataset.question;
+      askLast = null;
+      runAsk(hint.dataset.question);
+    });
+  }
+
   function openPendingBridge() {
     if (!pendingBridge) return;
     const pair = pendingBridge;
@@ -2225,16 +2412,22 @@
   function route() {
     const onMap = location.hash === "#/map";
     const onBridges = location.hash === "#/bridges";
+    const onAsk = location.hash === "#/ask";
     app.classList.toggle("map-main", onMap);
     mapLink.classList.toggle("active", onMap);
     bridgesLink.classList.toggle("active", onBridges);
-    libLink.classList.toggle("active", !onMap && !onBridges);
+    askLink.classList.toggle("active", onAsk);
+    libLink.classList.toggle("active", !onMap && !onBridges && !onAsk);
     if (onMap) {
       showMap();
       return;
     }
     if (onBridges) {
       showBridges();
+      return;
+    }
+    if (onAsk) {
+      showAsk();
       return;
     }
     const idea = location.hash.match(/^#\/idea\/(\d+)$/);

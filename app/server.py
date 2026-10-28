@@ -31,6 +31,7 @@ MAX_UPLOAD = 100 * 1024 * 1024  # 100 МБ
 MAX_NOTE_BYTES = 20000  # тело запроса с заметкой
 MAX_NOTE_CHARS = 5000   # длина самой заметки
 MAX_IDEA_CHARS = 1000   # длина идеи после правки
+MAX_QUESTION_CHARS = 500  # длина вопроса к библиотеке
 
 
 def connect() -> sqlite3.Connection:
@@ -546,6 +547,10 @@ class Handler(BaseHTTPRequestHandler):
             self.save_link_mark(int(link_mark.group(1)), int(link_mark.group(2)))
             return
 
+        if path == "/api/ask":
+            self.ask_library()
+            return
+
         if path != "/api/upload":
             self.send_error_text(404, "Нет такой страницы.")
             return
@@ -584,6 +589,26 @@ class Handler(BaseHTTPRequestHandler):
             self.send_error_text(404, "Заметка не найдена.")
             return
         self.send_json({"ok": True})
+
+    def ask_library(self) -> None:
+        """Ответ на вопрос читателя по идеям всех книг, со сносками."""
+        data = self.read_json_body("Не вижу вопроса.")
+        if data is None:
+            return
+        question = str(data.get("question") or "").strip()
+        if not question:
+            self.send_error_text(400, "Напишите вопрос.")
+            return
+        if len(question) > MAX_QUESTION_CHARS:
+            self.send_error_text(400, f"Вопрос длиннее {MAX_QUESTION_CHARS} знаков.")
+            return
+        from ask import answer_question  # ask берёт connect из этого модуля
+        try:
+            result = answer_question(question)
+        except (RuntimeError, OSError) as exc:
+            self.send_error_text(502, str(exc) or "Модель не ответила, попробуйте ещё раз.")
+            return
+        self.send_json(result)
 
     def read_json_body(self, empty_text: str) -> dict | None:
         """Читает JSON-тело запроса; при ошибке отвечает и возвращает None."""
