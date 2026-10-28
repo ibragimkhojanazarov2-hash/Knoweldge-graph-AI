@@ -1,10 +1,11 @@
 """Библиотека Marginalia: загрузка книги, список книг, карточка книги.
 
 Только стандартная библиотека: http.server + sqlite3.
-Запуск: python3 app/server.py [порт]
+Запуск: python3 app/server.py [порт] [--db путь/к/базе.db]
 """
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
 import mimetypes
@@ -39,8 +40,8 @@ def connect() -> sqlite3.Connection:
 
 
 def init_db() -> None:
-    DATA.mkdir(exist_ok=True)
-    COVERS.mkdir(exist_ok=True)
+    DB.parent.mkdir(parents=True, exist_ok=True)
+    COVERS.mkdir(parents=True, exist_ok=True)
     with connect() as db:
         db.executescript(
             """
@@ -656,10 +657,22 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main() -> None:
-    port = int(sys.argv[1]) if len(sys.argv) > 1 else 8000
+    global DB, COVERS
+    parser = argparse.ArgumentParser(description="Marginalia: библиотека идей из книг.")
+    parser.add_argument("port", nargs="?", type=int, default=8000, help="порт (по умолчанию 8000)")
+    parser.add_argument("--db", default=str(DB), help="путь к базе (по умолчанию data/library.db)")
+    args = parser.parse_args()
+
+    DB = Path(args.db).resolve()
+    COVERS = DB.parent / "covers"  # обложки лежат рядом с базой
+    existed = DB.exists()
     init_db()
-    server = ThreadingHTTPServer(("0.0.0.0", port), Handler)
-    print(f"Marginalia: http://127.0.0.1:{port}/", flush=True)
+    if not existed:
+        print(f"База не найдена — создана пустая: {DB}", flush=True)
+
+    server = ThreadingHTTPServer(("0.0.0.0", args.port), Handler)
+    print(f"Marginalia: http://127.0.0.1:{args.port}/", flush=True)
+    print(f"База: {DB}", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
