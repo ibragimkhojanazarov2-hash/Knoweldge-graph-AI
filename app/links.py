@@ -202,7 +202,8 @@ def parse_verdicts(answer: str, labels: dict[str, tuple[int, int]]) -> dict[tupl
 def verify_contradictions(links: list[dict]) -> list[dict]:
     """Второй запрос для «противоречит»: правда ли авторы говорят обратное.
 
-    Если модель отвечает «нет», связь получает настоящий тип или удаляется.
+    Если модель отвечает «нет», связь удаляется: тип не меняем, иначе
+    отклонённые противоречия оседают в «развивает» и раздувают его.
     """
     targets = [link for link in links if link["type"] == "contradicts"]
     if not targets:
@@ -219,7 +220,7 @@ def verify_contradictions(links: list[dict]) -> list[dict]:
         print(f"  проверка {number} из {len(batches)}: решений {len(found)}", flush=True)
 
     result: list[dict] = []
-    kept = changed = deleted = 0
+    kept = deleted = 0
     for link in links:
         pair = (link["from_id"], link["to_id"])
         verdict = verdicts.get(pair)
@@ -227,25 +228,12 @@ def verify_contradictions(links: list[dict]) -> list[dict]:
             result.append(link)
             continue
         confidence = verdict["confidence"]
-        if confidence < MIN_CONFIDENCE:
+        if confidence < MIN_CONFIDENCE or not verdict["opposite"]:
             deleted += 1
             continue
-        if verdict["opposite"]:
-            result.append({**link, "explanation": verdict["why"], "confidence": confidence})
-            kept += 1
-            continue
-        kind = verdict["type"]
-        if kind not in TYPES or kind == "contradicts" or kind == "none":
-            deleted += 1
-            continue
-        result.append({
-            **link,
-            "type": kind,
-            "explanation": verdict["why"],
-            "confidence": confidence,
-        })
-        changed += 1
-    print(f"«Противоречит»: осталось {kept}, сменили тип {changed}, удалено {deleted}", flush=True)
+        result.append({**link, "explanation": verdict["why"], "confidence": confidence})
+        kept += 1
+    print(f"«Противоречит»: осталось {kept}, удалено {deleted}", flush=True)
     return result
 
 
