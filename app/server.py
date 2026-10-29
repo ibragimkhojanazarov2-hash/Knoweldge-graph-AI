@@ -390,6 +390,101 @@ def delete_note(note_id: int) -> bool:
     return cursor.rowcount > 0
 
 
+SEARCH_LIMIT = 8
+
+
+def _match_score(haystack: str, needle: str) -> int | None:
+    """0 — совпадение с начала слова, 1 — внутри слова; None — нет совпадения."""
+    text = (haystack or "").casefold()
+    pos = text.find(needle)
+    if pos == -1:
+        return None
+    if pos == 0 or not text[pos - 1].isalnum():
+        return 0
+    return 1
+
+
+def _best_score(needle: str, *fields: str) -> int | None:
+    scores = [score for score in (_match_score(field, needle) for field in fields)
+              if score is not None]
+    return min(scores) if scores else None
+
+
+def get_search(query: str) -> dict:
+    """Поиск по идеям и цитатам, книгам и заметкам.
+
+    SQLite LIKE не знает регистра кириллицы, поэтому сравниваем в Python
+    через casefold: идей в библиотеке несколько сотен, это дёшево.
+    """
+    needle = (query or "").strip().casefold()
+    result = {"query": (query or "").strip(), "ideas": [], "books": [],
+              "notes": [], "counts": {"ideas": 0, "books": 0, "notes": 0}, "total": 0}
+    if len(needle) < 2:
+        return result
+
+    with connect() as db:
+        idea_rows = db.execute(
+            "SELECT i.id, i.book_id, i.chapter, i.idea, i.quote, i.title,"
+            "       b.title AS book_title, c.title AS chapter_title"
+            "  FROM ideas i"
+            "  JOIN books b ON b.id = i.book_id"
+            "  LEFT JOIN chapters c ON c.book_id = i.book_id AND c.idx = i.chapter"
+            " ORDER BY i.id"
+        ).fetchall()
+        book_rows = db.execute(
+            "SELECT id, title, author FROM books ORDER BY added DESC"
+        ).fetchall()
+        note_rows = db.execute(
+            "SELECT n.id, n.text, n.created, n.idea_id, i.idea AS idea,"
+            "       i.quote AS quote, b.title AS book_title"
+            "  FROM notes n"
+            "  JOIN ideas i ON i.id = n.idea_id"
+            "  JOIN books b ON b.id = i.book_id"
+            " ORDER BY n.id DESC"
+        ).fetchall()
+
+    ideas = []
+    for row in idea_rows:
+        score = _best_score(needle, row["idea"], row["quote"], row["title"])
+        if score is None:
+            continue
+        ideas.append((score, row["id"], {
+            "id": row["id"], "idea": row["idea"], "quote": row["quote"],
+            "book_title": row["book_title"], "chapter": row["chapter"],
+            "chapter_title": row["chapter_title"] or "",
+        }))
+    ideas.sort(key=lambda item: (item[0], item[1]))
+
+    books = []
+    for row in book_rows:
+        score = _best_score(needle, row["title"], row["author"])
+        if score is None:
+            continue
+        books.append((score, row["title"].casefold(), {
+            "id": row["id"], "title": row["title"], "author": row["author"] or "",
+        }))
+    books.sort(key=lambda item: (item[0], item[1]))
+
+    notes = []
+    for row in note_rows:
+        score = _best_score(needle, row["text"], row["idea"], row["quote"])
+        if score is None:
+            continue
+        notes.append((score, -row["id"], {
+            "id": row["id"], "text": row["text"], "idea_id": row["idea_id"],
+            "idea": row["idea"], "book_title": row["book_title"],
+            "created": row["created"],
+        }))
+    notes.sort(key=lambda item: (item[0], item[1]))
+
+    result["ideas"] = [item[2] for item in ideas[:SEARCH_LIMIT]]
+    result["books"] = [item[2] for item in books[:SEARCH_LIMIT]]
+    result["notes"] = [item[2] for item in notes[:SEARCH_LIMIT]]
+    result["counts"] = {"ideas": len(ideas), "books": len(books), "notes": len(notes)}
+    result["total"] = len(ideas) + len(books) + len(notes)
+    return result
+
+
 def get_graph(all_ideas: bool = False) -> dict:
     """Идеи и связи для карты: по умолчанию только идеи, у которых есть связи."""
     linked = "i.id IN (SELECT from_id FROM links UNION SELECT to_id FROM links)"
@@ -515,6 +610,11 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/graph":
             all_ideas = parse_qs(url.query).get("all", ["0"])[0] == "1"
             self.send_json(get_graph(all_ideas))
+            return
+
+        if path == "/api/search":
+            query = parse_qs(url.query).get("q", [""])[0]
+            self.send_json(get_search(query))
             return
 
         if path == "/api/review/today":

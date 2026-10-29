@@ -92,6 +92,7 @@
   }
   .nav-link:hover { color: var(--ink); border-color: var(--line); }
   .nav-link.active { color: var(--ink); border-color: var(--line); background: var(--surface); }
+  button.nav-link { background: none; font-family: inherit; cursor: pointer; }
   .icon-btn {
     width: 36px; height: 36px;
     border: 1px solid var(--line);
@@ -132,6 +133,16 @@
   }
   .btn:hover { filter: brightness(1.08); }
   .btn[disabled] { opacity: .55; cursor: default; filter: none; }
+  .btn.ghost {
+    background: var(--surface); color: var(--ink); border: 1px solid var(--line);
+  }
+  .btn.ghost:hover { filter: none; border-color: var(--ink-muted); }
+  .idea-actions {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px; flex-wrap: wrap; margin-bottom: 26px;
+  }
+  .idea-actions .back { margin-bottom: 0; }
+  .idea-actions .btn { padding: 8px 16px; font-size: 13px; }
   .hint { color: var(--ink-muted); font-size: 13px; }
   .note { font-size: 14px; }
   .note.error { color: #B3261E; }
@@ -424,6 +435,18 @@
     pointer-events: none;
   }
   .map-node.sel text { font-weight: 600; }
+  .map-node.found circle { stroke: var(--accent); stroke-width: 3.5; }
+  .map-node.found text { fill: var(--accent); font-weight: 600; }
+  #mapSvg.searching .map-node:not(.found) { opacity: .2; }
+  #mapSvg.searching .map-node.found { opacity: 1; }
+  .map-find { display: flex; align-items: center; gap: 8px; margin: 0 0 14px; }
+  .map-find input {
+    flex: 1; min-width: 0; padding: 7px 10px;
+    border: 1px solid var(--line); border-radius: 8px;
+    background: var(--bg); color: var(--ink); font: inherit; font-size: 13px;
+  }
+  .map-find input:focus { outline: none; border-color: var(--ink-muted); }
+  .map-found { font-size: 11px; color: var(--ink-muted); white-space: nowrap; }
   .map-edge.dim, .map-node.dim { opacity: .15; }
   .map-head-title {
     font-family: var(--serif); font-size: 16px; fill: var(--ink);
@@ -823,6 +846,14 @@
     #filtersBtn { display: inline-flex; width: auto; padding: 0 10px; font-size: 12px; }
     .map-panel { z-index: 8; width: min(340px, calc(100% - 28px)); }
   }
+  /* С «Поиском» в шапке стало семь пунктов: на планшете пусть переносятся,
+     а не вылезают за край. */
+  @media (max-width: 900px) {
+    .top-actions {
+      flex: 1; min-width: 0; flex-wrap: wrap;
+      justify-content: flex-end; gap: 6px;
+    }
+  }
   @media (max-width: 720px) {
     .top { padding: 12px 14px; gap: 12px; }
     .brand { font-size: 14px; }
@@ -846,6 +877,61 @@
     .nav-link { padding: 5px 7px; font-size: 11px; white-space: nowrap; }
     .icon-btn { width: 30px; height: 30px; }
   }
+  /* Поиск: окно поверх страницы, как в книгах — оглавление на просвет. */
+  .search-overlay {
+    position: fixed; inset: 0; z-index: 40;
+    display: flex; align-items: flex-start; justify-content: center;
+    padding: 9vh 20px 24px;
+    background: rgba(24, 19, 13, .38);
+  }
+  .search-overlay[hidden] { display: none; }
+  .search-box {
+    width: min(640px, 100%); max-height: 76vh;
+    display: flex; flex-direction: column;
+    background: var(--surface);
+    border: 1px solid var(--line); border-radius: 14px;
+    box-shadow: var(--shadow); overflow: hidden;
+  }
+  .search-head {
+    display: flex; align-items: center; gap: 8px;
+    padding: 12px 14px; border-bottom: 1px solid var(--line);
+  }
+  .search-head input {
+    flex: 1; min-width: 0;
+    border: 0; background: none; color: var(--ink);
+    font: inherit; font-family: var(--serif); font-size: 17px; outline: none;
+  }
+  .search-head input::placeholder { color: var(--ink-muted); }
+  /* У поля свой крестик в шапке — встроенный в Chrome не нужен рядом. */
+  .search-head input::-webkit-search-cancel-button,
+  .search-head input::-webkit-search-decoration { -webkit-appearance: none; display: none; }
+  .search-close {
+    border: 0; background: none; padding: 4px 7px; border-radius: 8px;
+    color: var(--ink-muted); font: inherit; font-size: 15px; cursor: pointer;
+  }
+  .search-close:hover { color: var(--ink); background: var(--bg); }
+  .search-results { overflow-y: auto; padding: 4px 0 10px; }
+  .search-group-title {
+    margin: 12px 16px 4px; font-size: 11px; letter-spacing: .08em;
+    text-transform: uppercase; color: var(--ink-muted);
+  }
+  .search-group-title span { letter-spacing: 0; text-transform: none; }
+  .search-item {
+    display: block; width: 100%; text-align: left;
+    border: 0; background: none; padding: 9px 16px;
+    color: var(--ink); font: inherit; cursor: pointer;
+  }
+  .search-item:hover, .search-item:focus { background: var(--bg); outline: none; }
+  .search-item-title {
+    display: block; font-family: var(--serif); font-size: 15px; line-height: 1.35;
+  }
+  .search-item-meta { display: block; margin-top: 2px; font-size: 12px; color: var(--ink-muted); }
+  .search-item mark { background: none; color: var(--accent); font-weight: 600; }
+  .search-empty { padding: 16px; color: var(--ink-muted); font-size: 14px; line-height: 1.5; }
+  @media (max-width: 720px) {
+    .search-overlay { padding: 6vh 12px 16px; }
+    .search-box { max-height: 84vh; }
+  }
 </style>
 </head>
 <body>
@@ -858,11 +944,22 @@
     <a class="nav-link" id="debateLink" href="#/debate">Спор</a>
     <a class="nav-link" id="askLink" href="#/ask">Спросить</a>
     <a class="nav-link" id="reviewLink" href="#/review">Повторить</a>
+    <button class="nav-link" id="searchBtn" type="button" title="Поиск (⌘K)">Поиск</button>
     <button class="icon-btn" id="themeBtn" type="button" title="Светлая или тёмная тема">◐</button>
   </div>
 </header>
 
 <main id="app"></main>
+
+<div class="search-overlay" id="searchOverlay" hidden>
+  <div class="search-box" role="dialog" aria-modal="true" aria-label="Поиск по библиотеке">
+    <div class="search-head">
+      <input type="search" id="searchInput" placeholder="Идея, цитата, книга, заметка…" autocomplete="off">
+      <button class="search-close" id="searchClose" type="button" title="Закрыть (Esc)">✕</button>
+    </div>
+    <div class="search-results" id="searchResults"></div>
+  </div>
+</div>
 
 <input type="file" id="file" accept=".epub,.txt" hidden>
 <script>
@@ -874,6 +971,11 @@
   const debateLink = document.getElementById("debateLink");
   const askLink = document.getElementById("askLink");
   const reviewLink = document.getElementById("reviewLink");
+  const searchBtn = document.getElementById("searchBtn");
+  const searchOverlay = document.getElementById("searchOverlay");
+  const searchInput = document.getElementById("searchInput");
+  const searchResults = document.getElementById("searchResults");
+  const searchClose = document.getElementById("searchClose");
   const fileInput = document.getElementById("file");
 
   // Адрес API — от каталога страницы, без имени файла: /proxy/8000/ или /proxy/8000/index.html
@@ -1327,7 +1429,10 @@
           Запустите <code>python3 app/links.py ${esc(idea.book_id)}</code>, и они появятся здесь.</div>`;
 
     app.innerHTML = `
-      <button class="back" type="button" id="backBtn">← К главе</button>
+      <div class="idea-actions">
+        <button class="back" type="button" id="backBtn">← К главе</button>
+        <button class="btn ghost" type="button" id="mapBtn">Показать на карте</button>
+      </div>
       <article class="reader idea-page">
         <div class="reader-meta">«${esc(idea.book_title)}» · глава ${String(idea.chapter).padStart(2, "0")}</div>
         <p class="idea-text">${esc(idea.idea)}</p>
@@ -1344,6 +1449,10 @@
         ${linksMarkup}
       </article>`;
     document.getElementById("backBtn").addEventListener("click", back);
+    document.getElementById("mapBtn").addEventListener("click", () => {
+      pendingFocus = Number(ideaId);
+      location.hash = "#/map";
+    });
 
     bindNotes(ideaId, notes);
     const noteForm = document.getElementById("noteForm");
@@ -1575,6 +1684,7 @@
       bookIds: new Set(graph.books.map((book) => book.id)),
       types: new Set(Object.keys(LINK_STYLES)),
       strongOnly: false,
+      find: "",
       labels: graph.ideas.length <= 60,
       allLoaded: Boolean(allLoaded),
       loading: false,
@@ -1656,6 +1766,8 @@
     return ''
       + '<h2>Карта идей</h2>'
       + '<p class="count" id="mapCount"></p>'
+      + '<div class="map-find"><input type="search" id="mapSearch" placeholder="Найти идею…"'
+      + ' value="' + esc(state.find) + '"><span class="map-found" id="mapFound"></span></div>'
       + '<div class="fgroup"><p class="fgroup-title">Книги</p>' + bookRows + '</div>'
       + '<div class="fgroup"><p class="fgroup-title">Типы связей</p>' + typeRows + '</div>'
       + '<div class="fgroup"><label class="frow"><input type="checkbox" id="strongOnly"'
@@ -1896,6 +2008,33 @@
     bindMap();
     renderPanel();
     bindMapResize();
+    applyMapHighlight();  // перерисовка снимает классы подсветки — ставим заново
+  }
+
+  /** Подсветка идей по слову из поля поиска на карте. */
+  function applyMapHighlight() {
+    const svg = document.getElementById("mapSvg");
+    const found = document.getElementById("mapFound");
+    if (!svg) return;
+    const needle = (mapState.find || "").trim().toLowerCase();
+    const hit = new Set();
+    if (needle.length >= 2) {
+      mapState.graph.ideas.forEach((idea) => {
+        if ((idea.idea || "").toLowerCase().includes(needle)
+            || (idea.quote || "").toLowerCase().includes(needle)) {
+          hit.add(String(idea.id));
+        }
+      });
+    }
+    svg.classList.toggle("searching", needle.length >= 2);
+    svg.querySelectorAll(".map-node").forEach((node) => {
+      node.classList.toggle("found", hit.has(node.dataset.id));
+    });
+    if (found) {
+      found.textContent = needle.length < 2
+        ? ""
+        : hit.size ? "найдено " + hit.size : "ничего не найдено";
+    }
   }
 
   /** Перекладка при повороте экрана или смене размера окна. */
@@ -1972,6 +2111,11 @@
     });
     document.getElementById("allIdeas").addEventListener("change", (event) => {
       loadMapData(event.target.checked);
+    });
+    const findInput = document.getElementById("mapSearch");
+    findInput.addEventListener("input", () => {
+      mapState.find = findInput.value;
+      applyMapHighlight();
     });
 
     svg.addEventListener("pointerdown", (event) => {
@@ -2324,6 +2468,7 @@
       fresh.types = previous.types;
       fresh.strongOnly = previous.strongOnly;
       fresh.labels = previous.labels;
+      fresh.find = previous.find;
       fresh.selected = fresh.graph.ideas.some((idea) => Number(idea.id) === selected)
         ? selected
         : null;
@@ -2348,6 +2493,7 @@
   let bridgeSort = "desc";   // "desc" — сначала самые уверенные
   let bridgePairs = [];
   let pendingBridge = null;  // пара, которую надо открыть на карте
+  let pendingFocus = null;   // идею, которую надо показать на карте
 
   function bridgeCard(link, first, second, colorOf) {
     const style = LINK_STYLES[link.type] || LINK_STYLES.same;
@@ -3079,6 +3225,46 @@
     selectLink(pair.from, pair.to);
   }
 
+  /** Ставим идею в центр видимой части карты. */
+  function centerOnIdea(id) {
+    const node = document.querySelector('.map-node[data-id="' + id + '"]');
+    const canvas = document.getElementById("mapCanvas");
+    if (!node || !canvas) return;
+    const match = /translate\(([-\d.]+)[ ,]([-\d.]+)\)/.exec(node.getAttribute("transform") || "");
+    if (!match) return;
+    const rect = canvas.getBoundingClientRect();
+    mapView = {
+      x: rect.width / 2 - Number(match[1]) * mapView.scale,
+      y: rect.height / 2 - Number(match[2]) * mapView.scale,
+      scale: mapView.scale,
+    };
+    applyView();
+  }
+
+  /** Показать на карте идею, с которой пришли со страницы идеи. */
+  async function openPendingFocus() {
+    if (pendingFocus == null) return;
+    const id = Number(pendingFocus);
+    pendingFocus = null;
+    if (!mapState) return;
+    let idea = mapState.graph.ideas.find((item) => Number(item.id) === id);
+    if (!idea && !mapState.allLoaded) {
+      await loadMapData(true);  // своих ошибок loadMapData не бросает, он их показывает
+      idea = mapState.graph.ideas.find((item) => Number(item.id) === id);
+    }
+    if (!idea) return;
+    mapState.bookIds.add(idea.book_id);
+    renderMapScreen();
+    // Фильтры могли спрятать идею — тогда показываем все типы и все связи.
+    if (!document.querySelector('.map-node[data-id="' + id + '"]')) {
+      mapState.types = new Set(Object.keys(LINK_STYLES));
+      mapState.strongOnly = false;
+      renderMapScreen();
+    }
+    selectIdea(id);
+    centerOnIdea(id);
+  }
+
   async function showMap() {
     app.classList.add("map-main");
     mapLink.classList.add("active");
@@ -3087,6 +3273,7 @@
     if (mapState) {
       renderMapScreen();
       openPendingBridge();
+      openPendingFocus();
       return;
     }
     app.innerHTML = '<div class="map-screen"><div class="map-canvas">'
@@ -3101,6 +3288,7 @@
     }
     renderMapScreen();
     openPendingBridge();
+    openPendingFocus();
   }
 
   function route() {
@@ -3156,6 +3344,143 @@
 
   fileInput.addEventListener("change", () => {
     if (fileInput.files.length) uploadBook(fileInput.files[0]);
+  });
+
+  // Поиск по библиотеке: окно поверх страницы, группы «идеи и цитаты»,
+  // «книги», «заметки». Сервер сам разбирает регистр кириллицы.
+  const SEARCH_HINT = "Начните вводить: ищем по идеям, цитатам, книгам и заметкам.";
+  let searchTimer = null;
+  let searchSeq = 0;
+
+  /** Подсвечиваем совпадения, остальное экранируем. */
+  function markText(text, query) {
+    const value = String(text ?? "");
+    const needle = (query || "").trim().toLowerCase();
+    if (!needle) return esc(value);
+    const lower = value.toLowerCase();
+    let out = "", from = 0, at = lower.indexOf(needle);
+    while (at !== -1) {
+      out += esc(value.slice(from, at)) + "<mark>"
+        + esc(value.slice(at, at + needle.length)) + "</mark>";
+      from = at + needle.length;
+      at = lower.indexOf(needle, from);
+    }
+    return out + esc(value.slice(from));
+  }
+
+  function searchItem(target, title, meta, quote, query) {
+    return '<button class="search-item" type="button" data-hash="' + esc(target) + '">'
+      + '<span class="search-item-title">' + markText(title, query) + '</span>'
+      + (quote ? '<span class="search-item-meta">«' + markText(quote, query) + '»</span>' : "")
+      + (meta ? '<span class="search-item-meta">' + markText(meta, query) + '</span>' : "")
+      + '</button>';
+  }
+
+  function renderSearchHint() {
+    searchResults.innerHTML = '<p class="search-empty">' + esc(SEARCH_HINT) + '</p>';
+  }
+
+  function renderSearch(data, query) {
+    if (!data.total) {
+      searchResults.innerHTML = '<p class="search-empty">Ничего не найдено по запросу «'
+        + esc(query) + '». Попробуйте другое слово или часть цитаты.</p>';
+      return;
+    }
+    const parts = [];
+    const groupCount = (shown, found) => "· " + (shown < found ? shown + " из " + found : found);
+    if (data.ideas.length) {
+      parts.push('<p class="search-group-title">Идеи и цитаты <span>'
+        + groupCount(data.ideas.length, data.counts.ideas) + '</span></p>');
+      data.ideas.forEach((idea) => {
+        const meta = idea.book_title + ' · глава ' + idea.chapter
+          + (idea.chapter_title ? ' · ' + idea.chapter_title : "");
+        parts.push(searchItem("#/idea/" + idea.id, idea.idea, meta, idea.quote, query));
+      });
+    }
+    if (data.books.length) {
+      parts.push('<p class="search-group-title">Книги <span>'
+        + groupCount(data.books.length, data.counts.books) + '</span></p>');
+      data.books.forEach((book) => {
+        parts.push(searchItem("#/book/" + encodeURIComponent(book.id), book.title,
+          book.author, "", query));
+      });
+    }
+    if (data.notes.length) {
+      parts.push('<p class="search-group-title">Заметки <span>'
+        + groupCount(data.notes.length, data.counts.notes) + '</span></p>');
+      data.notes.forEach((note) => {
+        parts.push(searchItem("#/idea/" + note.idea_id, note.text,
+          note.book_title + ' · к идее «' + shortText(note.idea, 48) + '»', "", query));
+      });
+    }
+    searchResults.innerHTML = parts.join("");
+  }
+
+  async function runSearch(query, seq) {
+    if (seq !== searchSeq) return;
+    searchResults.innerHTML = '<p class="search-empty">Ищем…</p>';
+    try {
+      const data = await api("api/search?q=" + encodeURIComponent(query));
+      if (seq !== searchSeq) return;
+      renderSearch(data, query);
+    } catch (error) {
+      if (seq !== searchSeq) return;
+      searchResults.innerHTML = '<p class="search-empty">Не получилось найти: '
+        + esc(error.message) + '</p>';
+    }
+  }
+
+  function openSearch() {
+    searchOverlay.hidden = false;
+    searchInput.value = "";
+    renderSearchHint();
+    searchInput.focus();
+  }
+
+  function closeSearch() {
+    if (searchOverlay.hidden) return;
+    searchOverlay.hidden = true;
+    searchSeq += 1;            // ответ, который ещё летит, уже не нужен
+    clearTimeout(searchTimer);
+  }
+
+  searchBtn.addEventListener("click", openSearch);
+  searchClose.addEventListener("click", closeSearch);
+  searchOverlay.addEventListener("mousedown", (event) => {
+    if (event.target === searchOverlay) closeSearch();
+  });
+  searchInput.addEventListener("input", () => {
+    clearTimeout(searchTimer);
+    searchSeq += 1;
+    const query = searchInput.value.trim();
+    if (query.length < 2) {
+      renderSearchHint();
+      return;
+    }
+    const seq = searchSeq;
+    searchTimer = setTimeout(() => runSearch(query, seq), 200);
+  });
+  searchInput.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    const first = searchResults.querySelector(".search-item");
+    if (first) first.click();
+  });
+  searchResults.addEventListener("click", (event) => {
+    const item = event.target.closest(".search-item");
+    if (!item) return;
+    const target = item.dataset.hash;
+    closeSearch();
+    if (location.hash === target) route();
+    else location.hash = target;
+  });
+  document.addEventListener("keydown", (event) => {
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+      event.preventDefault();
+      if (searchOverlay.hidden) openSearch();
+      else closeSearch();
+      return;
+    }
+    if (event.key === "Escape" && !searchOverlay.hidden) closeSearch();
   });
 
   // Сохраняем выбор только по кнопке: пока её не нажали, тема следует системе.
