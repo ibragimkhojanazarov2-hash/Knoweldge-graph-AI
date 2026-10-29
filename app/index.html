@@ -665,6 +665,7 @@
     font-family: var(--serif); font-size: 15px; line-height: 1.5;
   }
   .ask-next { margin: 30px 0 0; }
+  .ask-export { margin: 4px 0 18px; }
   .ask-hints { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
   .ask-hint {
     padding: 9px 15px; border: 1px solid var(--line); border-radius: 999px;
@@ -1039,6 +1040,81 @@
     })[ch]);
   }
 
+  function downloadBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    link.style.display = "none";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  }
+
+  // Архив для Obsidian: сервер собирает папку «Книги» и «Идеи» с [[ссылками]].
+  async function exportMarkdown() {
+    const button = document.getElementById("exportBtn");
+    const note = document.getElementById("note");
+    if (!button) return;
+    button.disabled = true;
+    const label = button.textContent;
+    button.textContent = "Собираю…";
+    try {
+      const response = await fetch(pageBase + "api/export/markdown");
+      if (!response.ok) throw new Error((await response.text()) || ("Ошибка " + response.status));
+      downloadBlob(await response.blob(), "marginalia-markdown.zip");
+      if (note) note.textContent = "Архив скачан: распакуйте папку и откройте её в Obsidian.";
+    } catch (error) {
+      if (note) note.textContent = "Не смог собрать архив: " + error.message;
+    } finally {
+      button.disabled = false;
+      button.textContent = label;
+    }
+  }
+
+  // Копирование: сначала буфер обмена, если браузер не даёт — старый способ.
+  function copyText(button, text) {
+    const label = button ? button.textContent : "";
+    const done = () => {
+      if (!button) return;
+      button.textContent = "Скопировано";
+      button.disabled = true;
+      setTimeout(() => {
+        button.textContent = label;
+        button.disabled = false;
+      }, 1600);
+    };
+    const failed = (error) => {
+      if (button) button.textContent = "Не удалось скопировать";
+      console.error(error);
+    };
+    const legacy = () => {
+      const area = document.createElement("textarea");
+      area.value = text;
+      area.style.position = "fixed";
+      area.style.top = "-1000px";
+      document.body.appendChild(area);
+      area.select();
+      try {
+        if (document.execCommand("copy")) done();
+        else failed(new Error("Браузер не дал скопировать"));
+      } catch (error) {
+        failed(error);
+      }
+      area.remove();
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, legacy);
+    } else {
+      legacy();
+    }
+  }
+
+  function markdownQuote(text) {
+    return String(text || "").split("\n").map((line) => "> " + line).join("\n");
+  }
+
   function plural(n, one, few, many) {
     const ten = n % 10, hundred = n % 100;
     if (ten === 1 && hundred !== 11) return one;
@@ -1078,6 +1154,7 @@
       <p class="lead">Добавьте книги — Marginalia найдёт идеи и покажет, где авторы согласны и где спорят.</p>
       <div class="upload">
         <button class="btn" type="button" id="addBtn">Добавить книгу</button>
+        <button class="btn ghost" type="button" id="exportBtn">Экспорт</button>
         <span class="hint">EPUB или TXT, до 100 МБ</span>
         <span class="note" id="note"></span>
       </div>
@@ -1086,6 +1163,7 @@
       <div id="shelf"></div>`;
 
     document.getElementById("addBtn").addEventListener("click", () => fileInput.click());
+    document.getElementById("exportBtn").addEventListener("click", exportMarkdown);
     loadShelf();
     loadReviewBadge();
     loadLinkOfDay();
@@ -2021,8 +2099,11 @@
       + '<button type="button" id="zoomIn" title="Приблизить">+</button>'
       + '<button type="button" id="zoomOut" title="Отдалить">−</button>'
       + '<button type="button" id="zoomReset" class="wide" title="Показать всю карту">Сброс</button>'
+      + '<button type="button" id="mapSvgBtn" class="wide" title="Сохранить вид карты как SVG">SVG</button>'
+      + '<button type="button" id="mapPngBtn" class="wide" title="Сохранить вид карты как PNG">PNG</button>'
       + '<label><input type="checkbox" id="labelsToggle"' + (state.labels ? " checked" : "")
       + '> Подписи</label>'
+      + '<span class="hint" id="mapNote"></span>'
       + '</div>'
       + '</div></div>';
     const count = document.getElementById("mapCount");
@@ -2111,6 +2192,119 @@
     applyView();
   }
 
+  // Карта: сохраняем то, что видно сейчас, — SVG для правки и PNG для отправки.
+  const MAP_EXPORT_VARS = ["--bg", "--surface", "--ink", "--ink-muted", "--line",
+    "--accent", "--supports", "--contradicts", "--extends", "--example", "--same",
+    "--book-a", "--book-b", "--book-c", "--book-d", "--book-e", "--book-f",
+    "--serif", "--sans"];
+
+  const MAP_EXPORT_CSS = [
+    ".map-edge{fill:none}",
+    ".map-edge-badge{fill:var(--bg);stroke-width:1.5}",
+    ".map-edge-icon{font-family:var(--sans);font-size:11px;text-anchor:middle;"
+      + "dominant-baseline:central;paint-order:stroke;stroke:var(--bg);stroke-width:2px}",
+    ".map-node circle{stroke:var(--surface);stroke-width:1.5}",
+    ".map-node.sel circle{stroke:var(--ink);stroke-width:2.5}",
+    ".map-node text{font-family:var(--sans);font-size:14px;fill:var(--ink);"
+      + "paint-order:stroke;stroke:var(--bg);stroke-width:3px;stroke-linejoin:round}",
+    ".map-node.sel text{font-weight:600}",
+    ".map-node.found circle{stroke:var(--accent);stroke-width:3.5}",
+    ".map-node.found text{fill:var(--accent);font-weight:600}",
+    ".map-edge.dim,.map-node.dim{opacity:.15}",
+    "#mapSvg.searching .map-node:not(.found){opacity:.2}",
+    ".map-head-title{font-family:var(--serif);font-size:16px;fill:var(--ink)}",
+    ".map-head-count{font-size:11px;fill:var(--ink-muted)}",
+    ".map-head-initial{font-family:var(--serif);font-size:24px;fill:var(--ink)}",
+  ].join("\n");
+
+  /** SVG текущего вида: цвета темы вписаны как значения, transform снят. */
+  function mapExportSvg() {
+    const canvas = document.getElementById("mapCanvas");
+    const source = document.getElementById("mapSvg");
+    if (!canvas || !source) throw new Error("карта не открыта");
+    const rect = canvas.getBoundingClientRect();
+    const scale = mapView.scale || 1;
+    const view = {
+      x: -mapView.x / scale,
+      y: -mapView.y / scale,
+      w: Math.max(1, rect.width / scale),
+      h: Math.max(1, rect.height / scale),
+    };
+    const round = (value) => Math.round(value * 100) / 100;
+    const clone = source.cloneNode(true);
+    clone.removeAttribute("style");
+    clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+    clone.setAttribute("viewBox", [view.x, view.y, view.w, view.h].map(round).join(" "));
+    clone.setAttribute("width", String(Math.round(view.w)));
+    clone.setAttribute("height", String(Math.round(view.h)));
+    clone.setAttribute("preserveAspectRatio", "xMidYMid meet");
+    const world = clone.querySelector("#mapWorld");
+    if (world) world.removeAttribute("transform");  // вид задаёт viewBox
+
+    const computed = getComputedStyle(document.documentElement);
+    const vars = MAP_EXPORT_VARS.map((name) =>
+      name + ":" + computed.getPropertyValue(name).trim() + ";").join("");
+    const style = document.createElementNS("http://www.w3.org/2000/svg", "style");
+    style.textContent = "svg{" + vars + "}\n" + MAP_EXPORT_CSS;
+    const background = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+    background.setAttribute("x", String(round(view.x)));
+    background.setAttribute("y", String(round(view.y)));
+    background.setAttribute("width", String(round(view.w)));
+    background.setAttribute("height", String(round(view.h)));
+    background.setAttribute("fill", "var(--bg)");
+    clone.insertBefore(background, clone.firstChild);
+    clone.insertBefore(style, clone.firstChild);
+    return new XMLSerializer().serializeToString(clone);
+  }
+
+  function exportMap(kind) {
+    const note = document.getElementById("mapNote");
+    const say = (text) => { if (note) note.textContent = text; };
+    say("");
+    let text;
+    try {
+      text = mapExportSvg();
+    } catch (error) {
+      say("Не смог сохранить карту: " + error.message);
+      return;
+    }
+    const name = "marginalia-map-" + new Date().toISOString().slice(0, 10);
+    if (kind === "svg") {
+      downloadBlob(new Blob([text], { type: "image/svg+xml" }), name + ".svg");
+      say("Карта сохранена как SVG.");
+      return;
+    }
+    const url = URL.createObjectURL(new Blob([text], { type: "image/svg+xml" }));
+    const image = new Image();
+    image.onload = () => {
+      URL.revokeObjectURL(url);
+      const ratio = 2;  // вдвое крупнее, чтобы PNG не был мыльным
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(image.width * ratio) || 1;
+      canvas.height = Math.round(image.height * ratio) || 1;
+      const context = canvas.getContext("2d");
+      if (!context) {
+        say("Браузер не дал нарисовать PNG — сохраните SVG.");
+        return;
+      }
+      context.setTransform(ratio, 0, 0, ratio, 0, 0);
+      context.drawImage(image, 0, 0);
+      canvas.toBlob((blob) => {
+        if (!blob) {
+          say("Не получилось собрать PNG — сохраните SVG.");
+          return;
+        }
+        downloadBlob(blob, name + ".png");
+        say("Карта сохранена как PNG.");
+      }, "image/png");
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(url);
+      say("Браузер не смог нарисовать PNG — сохраните SVG.");
+    };
+    image.src = url;
+  }
+
   function bindMap() {
     const svg = document.getElementById("mapSvg");
     const screen = document.getElementById("mapScreen");
@@ -2122,6 +2316,8 @@
       mapView = { x: 0, y: 0, scale: 1 };
       applyView();
     });
+    document.getElementById("mapSvgBtn").addEventListener("click", () => exportMap("svg"));
+    document.getElementById("mapPngBtn").addEventListener("click", () => exportMap("png"));
     document.getElementById("filtersBtn").addEventListener("click", () => {
       screen.classList.toggle("filters-open");
     });
@@ -2676,6 +2872,24 @@
   // «Спросить»: вопрос ко всей библиотеке, ответ модели со сносками [1], [2].
   let askLast = null;  // последний ответ: возвращаемся со сноски — он на месте
 
+  /** Ответ «Спросить» как Markdown — чтобы вставить в заметку или отправить. */
+  function askMarkdown(data) {
+    if (!data) return "";
+    const parts = ["# " + (data.question || "Вопрос к библиотеке"), ""];
+    const answer = String(data.answer || "").trim();
+    if (answer) parts.push(answer, "");
+    const sources = data.sources || [];
+    if (sources.length) {
+      parts.push("## Источники", "");
+      sources.forEach((source) => {
+        parts.push("[" + source.n + "] **" + source.book_title + "**"
+          + (source.chapter_title ? " · " + source.chapter_title : ""));
+        if (source.quote) parts.push("", markdownQuote("«" + source.quote + "»"), "");
+      });
+    }
+    return parts.join("\n").trim() + "\n";
+  }
+
   function askResultHtml(data) {
     const sources = data.sources || [];
     const target = new Map(sources.map((source) => [String(source.n), source]));
@@ -2700,6 +2914,9 @@
 
     return ''
       + '<div class="ask-answer">' + (paragraphs || '<p>Модель не дала ответа.</p>') + '</div>'
+      + '<div class="ask-export">'
+      + '<button class="btn ghost" id="askCopy" type="button">Скопировать Markdown</button>'
+      + '</div>'
       + (sourceList
         ? '<div class="ask-sources"><h2>Фрагменты, на которые опирался ответ</h2>'
           + sourceList + '</div>'
@@ -2785,6 +3002,11 @@
       runAsk(question);
     });
     result.addEventListener("click", (event) => {
+      const copy = event.target.closest("#askCopy");
+      if (copy) {
+        if (askLast) copyText(copy, askMarkdown(askLast));
+        return;
+      }
       const hint = event.target.closest(".ask-hint");
       if (!hint) return;
       input.value = hint.dataset.question;
@@ -2858,6 +3080,54 @@
       + '</section>';
   }
 
+  /** Спор двух книг как Markdown — для заметки, письма или отчёта. */
+  function debateMarkdown(data) {
+    if (!data) return "";
+    const groups = data.groups || {};
+    const titleA = data.book_a.title;
+    const titleB = data.book_b.title;
+    const parts = ["# Спор: «" + titleA + "» ↔ «" + titleB + "»", ""];
+
+    function linkLine(link) {
+      const label = LINK_TYPES[link.type] || link.type || "связь";
+      const confidence = Number(link.confidence);
+      const lines = ["- **" + label + "**"
+        + (Number.isFinite(confidence)
+            ? " · уверенность " + Math.round(confidence * 100) + "%" : "")];
+      [[titleA, link.a_quote, link.a_chapter_title],
+       [titleB, link.b_quote, link.b_chapter_title]].forEach(([book, quote, chapter]) => {
+        if (!quote) return;
+        lines.push("  - **" + book + "**" + (chapter ? " · " + chapter : "")
+          + ": «" + quote + "»");
+      });
+      if (link.explanation) lines.push("  - " + link.explanation);
+      return lines.join("\n");
+    }
+
+    function linkSection(title, links) {
+      if (!links || !links.length) return;
+      parts.push("## " + title, "", links.map(linkLine).join("\n"), "");
+    }
+
+    function onlySection(title, ideas) {
+      if (!ideas || !ideas.length) return;
+      parts.push("## " + title, "");
+      ideas.forEach((idea) => {
+        parts.push("- **" + idea.idea + "**"
+          + (idea.chapter_title ? " — " + idea.chapter_title : ""));
+        if (idea.quote) parts.push("  «" + idea.quote + "»");
+      });
+      parts.push("");
+    }
+
+    linkSection("Согласны", groups.agree);
+    linkSection("Спорят", groups.disagree);
+    onlySection("Только у «" + titleA + "»", groups.only_a);
+    onlySection("Только у «" + titleB + "»", groups.only_b);
+    if (data.verdict) parts.push("## В чём суть разногласия", "", data.verdict, "");
+    return parts.join("\n").trim() + "\n";
+  }
+
   function debateBody(data) {
     const groups = data.groups || {};
     const agree = (groups.agree || []).map((link) => debateLinkCard(link, data.book_a, data.book_b));
@@ -2886,6 +3156,8 @@
       + '<div class="debate-verdict-foot">'
       + '<span class="hint">' + (data.cached ? "Резюме из кэша: " : "Посчитано заново: ")
       + esc(debateDate(data.created)) + '</span>'
+      + '<button class="btn ghost" id="debateCopy" type="button">'
+      + 'Скопировать Markdown</button>'
       + '<button class="btn" id="debateRefresh" type="button">Пересчитать</button>'
       + '</div></section>';
 
@@ -3018,6 +3290,12 @@
       selectA.value = selectB.value;
       selectB.value = swap;
       load();
+    });
+
+    body.addEventListener("click", (event) => {
+      const copy = event.target.closest("#debateCopy");
+      if (!copy || !debateLast) return;
+      copyText(copy, debateMarkdown(debateLast.data));
     });
 
     if (debateLast && debateLast.a === left && debateLast.b === right) {

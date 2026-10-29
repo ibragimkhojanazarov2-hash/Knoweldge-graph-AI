@@ -656,6 +656,13 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(today_cards())
             return
 
+        if path == "/api/export/markdown":
+            from export_md import build_zip
+
+            body, _stats = build_zip()
+            self.send_bytes(body, "application/zip", filename="marginalia-markdown.zip")
+            return
+
         if path.startswith("/api/ideas/"):
             rest = path[len("/api/ideas/"):].rstrip("/")
             if rest.isdigit():
@@ -968,11 +975,14 @@ class Handler(BaseHTTPRequestHandler):
         body = json.dumps(data, ensure_ascii=False).encode()
         self.send_bytes(body, "application/json; charset=utf-8")
 
-    def send_bytes(self, body: bytes, ctype: str, code: int = 200) -> None:
+    def send_bytes(self, body: bytes, ctype: str, code: int = 200,
+                   filename: str = "") -> None:
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
+        if filename:
+            self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
         self.end_headers()
         self.wfile.write(body)
 
