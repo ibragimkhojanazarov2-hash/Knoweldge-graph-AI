@@ -877,6 +877,48 @@
     .nav-link { padding: 5px 7px; font-size: 11px; white-space: nowrap; }
     .icon-btn { width: 30px; height: 30px; }
   }
+  /* Телефон: семь пунктов в шапке не помещаются — нижняя панель вкладок. */
+  @media (max-width: 700px) {
+    /* backdrop-filter у шапки делал её «рамкой» для position: fixed —
+       нижняя панель прилипала к шапке, а не к низу экрана. */
+    .top { padding: 10px 14px; backdrop-filter: none; -webkit-backdrop-filter: none; }
+    .top-actions {
+      position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
+      margin: 0; padding: 6px 2px calc(6px + env(safe-area-inset-bottom));
+      display: flex; flex-wrap: nowrap; justify-content: space-around;
+      gap: 0; overflow: hidden;
+      background: color-mix(in srgb, var(--bg) 94%, transparent);
+      backdrop-filter: blur(12px);
+      border-top: 1px solid var(--line);
+    }
+    .top-actions .nav-link {
+      flex: 1 1 0; min-width: 0; width: auto; height: auto;
+      display: flex; flex-direction: column; align-items: center; gap: 2px;
+      padding: 4px 1px; border: none; border-radius: 10px;
+      font-size: 9px; line-height: 1.1; white-space: nowrap;
+    }
+    .top-actions .nav-link:hover,
+    .top-actions .nav-link.active { background: var(--surface); border: none; }
+    .top-actions .nav-link::before { font-size: 16px; line-height: 1; }
+    .top-actions .icon-btn {
+      flex: 1 1 0; min-width: 0; width: auto; height: auto;
+      display: flex; flex-direction: column; align-items: center; gap: 2px;
+      padding: 4px 1px; border: none; border-radius: 10px;
+      background: none; font-size: 16px; line-height: 1.1;
+    }
+    .top-actions .icon-btn::after { content: "Тема"; font-size: 9px; line-height: 1.1; }
+    #libLink::before { content: "▤"; }
+    #mapLink::before { content: "◈"; }
+    #bridgesLink::before { content: "⇄"; }
+    #debateLink::before { content: "⚖"; }
+    #askLink::before { content: "?"; }
+    #reviewLink::before { content: "↻"; }
+    #searchBtn::before { content: "⌕"; }
+    main { padding-bottom: calc(74px + env(safe-area-inset-bottom)); }
+    main.map-main {
+      height: calc(100dvh - 54px - 66px - env(safe-area-inset-bottom));
+    }
+  }
   /* Поиск: окно поверх страницы, как в книгах — оглавление на просвет. */
   .search-overlay {
     position: fixed; inset: 0; z-index: 40;

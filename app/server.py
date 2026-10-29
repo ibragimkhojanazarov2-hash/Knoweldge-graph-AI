@@ -9,6 +9,7 @@ import argparse
 import hashlib
 import json
 import mimetypes
+import os
 import posixpath
 import re
 import sqlite3
@@ -36,7 +37,10 @@ LINK_KINDS = ("supports", "contradicts", "extends", "example", "same")
 
 
 def connect() -> sqlite3.Connection:
-    db = sqlite3.connect(DB)
+    # Когда server.py запущен как «python3 app/server.py», модули (ask, debate,
+    # review) получают его вторую копию: свои пути к базе. Поэтому путь передаём
+    # через окружение — его видят обе копии.
+    db = sqlite3.connect(os.environ.get("MARGINALIA_DB") or DB)
     db.row_factory = sqlite3.Row
     return db
 
@@ -391,6 +395,35 @@ def delete_note(note_id: int) -> bool:
 
 
 SEARCH_LIMIT = 8
+SEARCH_WORD = re.compile(r"[а-яёa-z0-9]+")
+SEARCH_VOWELS = "аеёиоуыэюяaeiouy"
+
+
+def _stem(word: str) -> str:
+    """Основа слова, как в links.py: первые пять букв.
+
+    Ещё снимаем гласную на конце, иначе «удача», «удачи» и «удачу» дают
+    разные основы («удача», «удачи», «удачу») и не находят друг друга.
+    """
+    stem = word[:5]
+    if len(word) > 4:
+        stem = stem.rstrip(SEARCH_VOWELS) or stem
+    return stem
+
+
+def _stem_score(text: str, needle: str) -> int | None:
+    """Запрос в других формах слов: все его слова есть в тексте по основе."""
+    tokens = [token for token in SEARCH_WORD.findall(needle) if len(token) >= 2]
+    if not tokens:
+        return None
+    words = SEARCH_WORD.findall(text)
+    if not words:
+        return None
+    exact = set(words)
+    stems = {_stem(word) for word in words}
+    if all(token in exact or _stem(token) in stems for token in tokens):
+        return 0
+    return None
 
 
 def _match_score(haystack: str, needle: str) -> int | None:
@@ -398,7 +431,7 @@ def _match_score(haystack: str, needle: str) -> int | None:
     text = (haystack or "").casefold()
     pos = text.find(needle)
     if pos == -1:
-        return None
+        return _stem_score(text, needle)
     if pos == 0 or not text[pos - 1].isalnum():
         return 0
     return 1
@@ -959,6 +992,8 @@ def main() -> None:
 
     DB = Path(args.db).resolve()
     COVERS = DB.parent / "covers"  # обложки лежат рядом с базой
+    # До импорта ask/debate/review и до init_db: они читают путь из окружения.
+    os.environ["MARGINALIA_DB"] = str(DB)
     existed = DB.exists()
     init_db()
     if not existed:
