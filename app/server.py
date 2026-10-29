@@ -191,22 +191,28 @@ def parse_book(filename: str, body: bytes) -> dict:
     return book
 
 
-def save_book(book: dict) -> str:
+def save_book(book: dict) -> tuple[str, bool]:
+    """Сохраняет книгу и возвращает (id, добавлена ли она сейчас).
+
+    Если такая книга уже в библиотеке, ничего не трогаем: её идеи, связи,
+    заметки и карточки повторения остаются на месте.
+    """
     raw = f"{book['title']}\0{book['author']}\0{len(book['chapters'])}".encode()
     book_id = hashlib.sha1(raw).hexdigest()[:12]
 
-    cover_name = ""
-    if book["cover"]:
-        cover_name = f"{book_id}{book['cover_ext'] or '.jpg'}"
-        (COVERS / cover_name).write_bytes(book["cover"])
-
-    chapters = book["chapters"]
-    char_count = sum(len(c["text"]) for c in chapters)
-    added = datetime.now(timezone.utc).isoformat(timespec="seconds")
-
     with connect() as db:
-        db.execute("DELETE FROM chapters WHERE book_id = ?", (book_id,))
-        db.execute("DELETE FROM books WHERE id = ?", (book_id,))
+        if db.execute("SELECT 1 FROM books WHERE id = ?", (book_id,)).fetchone():
+            return book_id, False
+
+        cover_name = ""
+        if book["cover"]:
+            cover_name = f"{book_id}{book['cover_ext'] or '.jpg'}"
+            (COVERS / cover_name).write_bytes(book["cover"])
+
+        chapters = book["chapters"]
+        char_count = sum(len(c["text"]) for c in chapters)
+        added = datetime.now(timezone.utc).isoformat(timespec="seconds")
+
         db.execute(
             "INSERT INTO books (id, title, author, lang, cover, chapter_count,"
             " char_count, added) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
@@ -217,7 +223,64 @@ def save_book(book: dict) -> str:
             "INSERT INTO chapters (book_id, idx, title, text) VALUES (?, ?, ?, ?)",
             [(book_id, i, c["title"], c["text"]) for i, c in enumerate(chapters, 1)],
         )
-    return book_id
+    return book_id, True
+
+
+def delete_book(book_id: str) -> bool:
+    """Удаляет книгу и всё, что к ней относится.
+
+    Идеи, связи в обе стороны, заметки, оценки, ключевые идеи, конспект,
+    карточки повторения, споры с этой книгой, главы и файл обложки.
+    """
+    with connect() as db:
+        row = db.execute("SELECT cover FROM books WHERE id = ?", (book_id,)).fetchone()
+        if row is None:
+            return False
+
+        idea_sql = "SELECT id FROM ideas WHERE book_id = ?"
+        key_ids = [
+            r["id"] for r in db.execute(
+                "SELECT id FROM key_ideas WHERE book_id = ?", (book_id,)
+            )
+        ]
+        link_ids = [
+            r["id"] for r in db.execute(
+                "SELECT id FROM links WHERE from_id IN (" + idea_sql + ")"
+                " OR to_id IN (" + idea_sql + ")",
+                (book_id, book_id),
+            )
+        ]
+
+        db.execute(
+            "DELETE FROM link_marks WHERE (from_id, to_id) IN ("
+            " SELECT from_id, to_id FROM links WHERE from_id IN (" + idea_sql + ")"
+            " OR to_id IN (" + idea_sql + "))",
+            (book_id, book_id),
+        )
+        db.execute("DELETE FROM links WHERE from_id IN (" + idea_sql + ")"
+                   " OR to_id IN (" + idea_sql + ")", (book_id, book_id))
+        db.execute("DELETE FROM notes WHERE idea_id IN (" + idea_sql + ")", (book_id,))
+        db.execute("DELETE FROM idea_marks WHERE idea_id IN (" + idea_sql + ")", (book_id,))
+        db.execute("DELETE FROM key_ideas WHERE book_id = ?", (book_id,))
+        db.execute("DELETE FROM summary WHERE book_id = ?", (book_id,))
+        db.execute("DELETE FROM debates WHERE book_a = ? OR book_b = ?", (book_id, book_id))
+        db.executemany(
+            "DELETE FROM reviews WHERE source = ?",
+            [(f"idea:{i}",) for i in key_ids]
+            + [(f"link:{i}",) for i in link_ids]
+            + [(f"author:{i}",) for i in link_ids],
+        )
+        db.execute("DELETE FROM ideas WHERE book_id = ?", (book_id,))
+        db.execute("DELETE FROM chapters WHERE book_id = ?", (book_id,))
+        db.execute("DELETE FROM books WHERE id = ?", (book_id,))
+
+    cover = posixpath.basename(row["cover"] or "")
+    if cover:
+        try:
+            (COVERS / cover).unlink()
+        except FileNotFoundError:
+            pass
+    return True
 
 
 def list_books() -> list[dict]:
@@ -796,23 +859,31 @@ class Handler(BaseHTTPRequestHandler):
         body = self.rfile.read(length)
         try:
             book = parse_book(filename, body)
-            book_id = save_book(book)
+            book_id, created = save_book(book)
         except (ValueError, KeyError) as exc:
             self.send_error_text(400, str(exc) or "Не смог разобрать книгу.")
             return
         except (zipfile.BadZipFile, ET.ParseError):
             self.send_error_text(400, "Файл повреждён или это не EPUB.")
             return
-        self.send_json({"id": book_id})
+        self.send_json({"id": book_id, "duplicate": not created})
 
     def do_DELETE(self) -> None:
         path = strip_prefix(unquote(urlparse(self.path).path))
         match = re.fullmatch(r"/api/notes/(\d+)", path)
+        if match:
+            if not delete_note(int(match.group(1))):
+                self.send_error_text(404, "Заметка не найдена.")
+                return
+            self.send_json({"ok": True})
+            return
+
+        match = re.fullmatch(r"/api/books/([^/]+)", path)
         if not match:
             self.send_error_text(404, "Нет такой страницы.")
             return
-        if not delete_note(int(match.group(1))):
-            self.send_error_text(404, "Заметка не найдена.")
+        if not delete_book(match.group(1)):
+            self.send_error_text(404, "Книга не найдена.")
             return
         self.send_json({"ok": True})
 

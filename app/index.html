@@ -262,6 +262,27 @@
   .book-extra { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 22px; margin-top: 16px; font-size: 13px; color: var(--ink-muted); }
   .book-extra a { color: var(--accent); text-decoration: none; border-bottom: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); }
   .book-extra a:hover { border-bottom-color: var(--accent); }
+  .book-delete {
+    margin-left: auto; padding: 0; border: 0; background: none; font: inherit; font-size: 13px;
+    color: #B3261E; cursor: pointer; border-bottom: 1px solid color-mix(in srgb, #B3261E 40%, transparent);
+  }
+  .book-delete:hover { border-bottom-color: #B3261E; }
+  .book-delete:disabled { opacity: .5; cursor: default; }
+  /* «О проекте»: проблема, решение, схема работы, приватность. */
+  .about { max-width: 760px; }
+  .about h2 { margin: 30px 0 8px; font-family: var(--serif); font-size: 22px; font-weight: 600; }
+  .about p { margin: 0 0 10px; line-height: 1.65; }
+  .about-flow { display: flex; flex-wrap: wrap; align-items: stretch; gap: 10px; margin: 16px 0 0; padding: 0; list-style: none; }
+  .about-step {
+    flex: 1 1 118px; min-width: 118px; padding: 12px 14px;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
+  }
+  .about-step b { display: block; margin-bottom: 4px; font-family: var(--serif); font-size: 16px; }
+  .about-step span { display: block; color: var(--ink-muted); font-size: 12px; line-height: 1.45; }
+  .about-arrow { align-self: center; color: var(--ink-muted); font-size: 16px; }
+  .about-link { margin: 28px 0 0; color: var(--ink-muted); font-size: 13px; }
+  .about-link a { color: var(--accent); text-decoration: none; border-bottom: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); }
+  .note a { color: var(--accent); }
   .chapters { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
   .chapter-row {
     display: flex; align-items: baseline; gap: 16px;
@@ -915,6 +936,11 @@
     #askLink::before { content: "?"; }
     #reviewLink::before { content: "↻"; }
     #searchBtn::before { content: "⌕"; }
+    /* В нижнюю панель «О проекте» не влезает: ссылка есть на экране библиотеки. */
+    #aboutLink { display: none; }
+    .about-flow { flex-direction: column; align-items: stretch; }
+  .about-step { flex: 0 0 auto; }
+    .about-arrow { align-self: center; transform: rotate(90deg); }
     main { padding-bottom: calc(74px + env(safe-area-inset-bottom)); }
     main.map-main {
       height: calc(100dvh - 54px - 66px - env(safe-area-inset-bottom));
@@ -987,6 +1013,7 @@
     <a class="nav-link" id="debateLink" href="#/debate">Спор</a>
     <a class="nav-link" id="askLink" href="#/ask">Спросить</a>
     <a class="nav-link" id="reviewLink" href="#/review">Повторить</a>
+    <a class="nav-link" id="aboutLink" href="#/about">О проекте</a>
     <button class="nav-link" id="searchBtn" type="button" title="Поиск (⌘K)">Поиск</button>
     <button class="icon-btn" id="themeBtn" type="button" title="Светлая или тёмная тема">◐</button>
   </div>
@@ -1014,6 +1041,7 @@
   const debateLink = document.getElementById("debateLink");
   const askLink = document.getElementById("askLink");
   const reviewLink = document.getElementById("reviewLink");
+  const aboutLink = document.getElementById("aboutLink");
   const searchBtn = document.getElementById("searchBtn");
   const searchOverlay = document.getElementById("searchOverlay");
   const searchInput = document.getElementById("searchInput");
@@ -1029,7 +1057,12 @@
   let bookView = "chapters"; // какая вкладка открыта на странице книги: главы или ключевые идеи
 
   async function api(path, options) {
-    const response = await fetch(pageBase + path, options);
+    let response;
+    try {
+      response = await fetch(pageBase + path, options);
+    } catch {
+      throw new Error("Нет связи с сервером. Проверьте, что сервер запущен, и попробуйте ещё раз.");
+    }
     if (!response.ok) throw new Error((await response.text()) || ("Ошибка " + response.status));
     return response.json();
   }
@@ -1148,6 +1181,41 @@
     </div>`;
   }
 
+  function showAbout() {
+    const steps = [
+      ["Книга", "EPUB или TXT до 100 МБ, разбор на главы"],
+      ["Идеи", "модель выписывает главные мысли с цитатой"],
+      ["Проверка цитат", "цитата сверяется с текстом главы"],
+      ["Связи", "идеи разных книг: согласие, продолжение, спор"],
+      ["Карта", "вся библиотека на одной карте"]
+    ];
+    app.innerHTML = `
+      <button class="back" type="button" id="backBtn">← Библиотека</button>
+      <section class="about">
+        <h1>О проекте</h1>
+        <p class="lead">Marginalia — читательский дневник, который сам находит в книгах идеи и показывает, где авторы согласны, а где спорят.</p>
+
+        <h2>Проблема</h2>
+        <p>Книги читаются одна за другой, а через месяц остаётся только обложка. Идеи растворяются, цитаты теряются, а связи между книгами — то, что один автор уже сказал то же самое или наоборот спорит, — никто не держит в голове.</p>
+
+        <h2>Решение</h2>
+        <p>Marginalia разбирает каждую книгу на идеи с дословными цитатами, соединяет похожие и противоположные мысли из разных книг и даёт повторять карточки, пока идеи не останутся в памяти.</p>
+
+        <h2>Как это работает</h2>
+        <ol class="about-flow">${steps.map(([title, text], index) =>
+          (index ? '<li class="about-arrow" aria-hidden="true">→</li>' : "") +
+          `<li class="about-step"><b>${esc(title)}</b><span>${esc(text)}</span></li>`
+        ).join("")}</ol>
+        <p>Каждая цитата ищется в тексте главы; если её там нет, идея отбрасывается, а сама цитата берётся из книги — так в карточках не бывает выдуманных строк. Ключевые идеи, конспект и споры авторов можно перепроверить на вкладках книги.</p>
+
+        <h2>Приватность</h2>
+        <p>Библиотека — книги, идеи, заметки, оценки — лежит в одном файле на сервере проекта (<code>data/library.db</code>). Никаких аккаунтов, рекламы и счётчиков посещений.</p>
+        <p>В модель уходят только фрагменты текста, нужные для разбора: одна глава или список идей. Вся библиотека целиком никуда не отправляется.</p>
+        <p>Удаление книги стирает и её главы, идеи, связи, заметки, карточки повторения и обложку.</p>
+      </section>`;
+    document.getElementById("backBtn").addEventListener("click", () => { location.hash = ""; });
+  }
+
   function showLibrary() {
     app.innerHTML = `
       <h1>Библиотека</h1>
@@ -1160,7 +1228,8 @@
       </div>
       <div id="reviewBadge"></div>
       <div id="linkDay"></div>
-      <div id="shelf"></div>`;
+      <div id="shelf"></div>
+      <p class="about-link"><a href="#/about">О проекте: как работает Marginalia →</a></p>`;
 
     document.getElementById("addBtn").addEventListener("click", () => fileInput.click());
     document.getElementById("exportBtn").addEventListener("click", exportMarkdown);
@@ -1298,6 +1367,13 @@
         headers: { "X-Filename": encodeURIComponent(file.name) },
         body: file
       });
+      if (result.duplicate) {
+        note.className = "note";
+        note.innerHTML = "Эта книга уже в библиотеке — её данные сохранены. " +
+          `<a href="#/book/${encodeURIComponent(result.id)}">Открыть книгу →</a>`;
+        await loadShelf();
+        return;
+      }
       location.hash = "/book/" + result.id;
     } catch (error) {
       note.className = "note error";
@@ -1373,7 +1449,9 @@
             <span>Проверено вами: <b>${book.checked_count || 0}</b> из ${book.link_count} ${linksWord(book.link_count)}</span>
             <a href="#/debate/${encodeURIComponent(id)}">Спор авторов →</a>
             <a href="#/bridges">Мосты между книгами →</a>
+            <button class="book-delete" type="button" id="bookDelete">Удалить книгу</button>
           </div>
+          <p class="note error" id="bookNote" hidden></p>
           ${summary ? `<p class="book-about">${esc(firstSentences(summary.about, 3))}</p>` : ""}
         </div>
       </section>
@@ -1387,6 +1465,25 @@
       <div class="summary-pane">${summaryMarkup}</div>`;
 
     document.getElementById("backBtn").addEventListener("click", () => { location.hash = ""; });
+    const deleteBtn = document.getElementById("bookDelete");
+    const bookNote = document.getElementById("bookNote");
+    deleteBtn.addEventListener("click", async () => {
+      const ok = confirm(
+        "Удалить «" + book.title + "»?\n\n" +
+        "Вместе с книгой исчезнут её идеи, связи с другими книгами, заметки, карточки повторения и обложка."
+      );
+      if (!ok) return;
+      deleteBtn.disabled = true;
+      bookNote.hidden = true;
+      try {
+        await api("api/books/" + encodeURIComponent(id), { method: "DELETE" });
+        location.hash = "";
+      } catch (error) {
+        bookNote.textContent = "Не удалось удалить книгу: " + error.message;
+        bookNote.hidden = false;
+        deleteBtn.disabled = false;
+      }
+    });
     app.querySelectorAll("[data-chapter]").forEach((row) => {
       row.addEventListener("click", () => {
         location.hash = "/book/" + id + "/chapter/" + row.dataset.chapter;
@@ -3618,14 +3715,20 @@
     const onDebate = location.hash === "#/debate"
       || location.hash.startsWith("#/debate/");
     const onReview = location.hash === "#/review";
+    const onAbout = location.hash === "#/about";
     app.classList.toggle("map-main", onMap);
     mapLink.classList.toggle("active", onMap);
     bridgesLink.classList.toggle("active", onBridges);
     askLink.classList.toggle("active", onAsk);
     debateLink.classList.toggle("active", onDebate);
     reviewLink.classList.toggle("active", onReview);
+    aboutLink.classList.toggle("active", onAbout);
     libLink.classList.toggle("active",
-      !onMap && !onBridges && !onAsk && !onDebate && !onReview);
+      !onMap && !onBridges && !onAsk && !onDebate && !onReview && !onAbout);
+    if (onAbout) {
+      showAbout();
+      return;
+    }
     if (onMap) {
       showMap();
       return;

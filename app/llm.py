@@ -31,7 +31,18 @@ def chat(messages: list[dict], max_tokens: int = 2000) -> str:
             data = json.load(response)
     except urllib.error.HTTPError as exc:
         raise RuntimeError(exc.read().decode("utf-8", "replace") or str(exc)) from exc
-    content = data["choices"][0]["message"]["content"]
+    except urllib.error.URLError as exc:
+        raise RuntimeError(
+            "Модель сейчас недоступна: сервер моделей не отвечает. Попробуйте позже."
+        ) from exc
+    except TimeoutError as exc:
+        raise RuntimeError("Модель не ответила вовремя. Попробуйте ещё раз.") from exc
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("Модель ответила непонятно. Попробуйте ещё раз.") from exc
+    try:
+        content = data["choices"][0]["message"]["content"]
+    except (KeyError, IndexError, TypeError) as exc:
+        raise RuntimeError("Модель ответила непонятно. Попробуйте ещё раз.") from exc
     if not content or not content.strip():
         raise RuntimeError("Модель вернула пустой ответ.")
     return content
