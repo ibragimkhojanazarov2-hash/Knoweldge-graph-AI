@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Marginalia — библиотека</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23B4532A'/%3E%3Ctext x='16' y='23' font-family='Georgia,serif' font-size='19' fill='%23FFF8F2' text-anchor='middle'%3EM%3C/text%3E%3C/svg%3E">
 <script>
   // Тему ставим до отрисовки: иначе в тёмной системе страница мигнёт белым.
   (function () {
@@ -34,6 +35,8 @@
     --extends: #3D5A98;
     --example: #C08A2E;
     --same: #8A8278;
+    --danger: #A32118;
+    --focus: #8A3D1C;
     --shadow: 0 18px 40px -24px rgba(60, 45, 25, .45);
     --serif: "Times New Roman", Times, "Tinos", "Liberation Serif", serif;
     --sans: "Manrope", -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
@@ -56,6 +59,8 @@
     --extends: #6C86C4;
     --example: #D9A646;
     --same: #A39A8E;
+    --danger: #F0938A;
+    --focus: #E8A882;
     --shadow: 0 18px 40px -24px rgba(0, 0, 0, .7);
   }
   * { box-sizing: border-box; }
@@ -103,7 +108,106 @@
     cursor: pointer;
   }
   .icon-btn:hover { color: var(--ink); border-color: var(--ink-muted); }
-  main { max-width: 1120px; margin: 0 auto; padding: 40px 32px 80px; }
+  /* Видимый фокус для клавиатуры на всём, что можно нажать. */
+  :focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+  .nav-link:focus-visible, .icon-btn:focus-visible, .btn:focus-visible,
+  .chip:focus-visible, [role="button"]:focus-visible { border-radius: 999px; outline-offset: 3px; }
+
+  main { position: relative; z-index: 1; max-width: 1120px; margin: 0 auto; padding: 40px 32px 80px; }
+
+  /* Поворот страницы: старый экран уходит листом, новый проявляется под ним. */
+  .turn-sheet {
+    position: fixed; z-index: 20;
+    margin: 0 !important; max-width: none !important;
+    overflow: hidden;
+    background: var(--bg);
+    transform-origin: left center;
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+    pointer-events: none;
+    will-change: transform;
+    box-shadow: -16px 0 48px rgba(31, 27, 22, .16);
+  }
+  html[data-theme="dark"] .turn-sheet { box-shadow: -16px 0 48px rgba(0, 0, 0, .55); }
+  .turn-sheet::after {
+    content: ""; position: absolute; inset: 0; pointer-events: none;
+    background: linear-gradient(90deg, rgba(31, 27, 22, .20), rgba(31, 27, 22, .05) 16%, transparent 42%);
+    animation: fold-shadow 620ms ease-out forwards;
+  }
+  html[data-theme="dark"] .turn-sheet::after {
+    background: linear-gradient(90deg, rgba(0, 0, 0, .55), rgba(0, 0, 0, .18) 16%, transparent 42%);
+  }
+  .turn-sheet.turn-out {
+    animation: turn-out-next 620ms cubic-bezier(.4, .04, .28, 1) forwards;
+  }
+  @keyframes turn-out-next {
+    from { transform: perspective(1800px) rotateY(0deg); }
+    to { transform: perspective(1800px) rotateY(-92deg); }
+  }
+  @keyframes fold-shadow { from { opacity: 1; } to { opacity: .0; } }
+  #app.turn-in { animation: reveal 420ms ease-out; }
+  @keyframes reveal {
+    from { opacity: .35; transform: translateX(10px); }
+    to { opacity: 1; transform: none; }
+  }
+
+  /* Бледные обложки на фоне страницы — как в макете. */
+  .page-wm {
+    position: fixed; inset: 0; z-index: 0;
+    overflow: hidden;
+    opacity: .05; filter: blur(2px);
+    pointer-events: none; user-select: none;
+  }
+  html[data-theme="dark"] .page-wm { opacity: .07; }
+  .page-wm.is-off { display: none; }
+  .page-wm .wm-cover {
+    position: absolute; display: block;
+    border-radius: 16px; overflow: hidden;
+    background: linear-gradient(160deg,
+      color-mix(in srgb, var(--book) 80%, #fff) 0%,
+      var(--book) 46%,
+      color-mix(in srgb, var(--book) 68%, #000) 100%);
+  }
+  .page-wm .wm-cover::after {
+    content: ""; position: absolute; inset: 0 auto 0 0; width: 9%;
+    background: linear-gradient(90deg, rgba(0, 0, 0, .22), transparent);
+  }
+  .page-wm .wm-cover span {
+    position: absolute; left: 16%; right: 11%; bottom: 11%;
+    font-family: var(--serif); font-weight: 700; line-height: 1.1;
+    color: #FBF6EC;
+  }
+  .page-wm .wm-cover:nth-child(1) { width: 420px; height: 600px; top: -70px; right: -130px; font-size: 44px; transform: rotate(-7deg); }
+  .page-wm .wm-cover:nth-child(2) { width: 300px; height: 430px; top: 360px; right: 150px; font-size: 28px; transform: rotate(6deg); }
+  .page-wm .wm-cover:nth-child(3) { width: 220px; height: 315px; top: 520px; left: -70px; font-size: 21px; transform: rotate(-12deg); }
+  .page-wm .wm-cover:nth-child(4) { width: 160px; height: 228px; top: 130px; left: 66px; font-size: 14px; transform: rotate(9deg); }
+
+  .site-foot {
+    position: relative; z-index: 1;
+    max-width: 1120px; margin: 0 auto;
+    padding: 0 32px 48px;
+    color: var(--ink-muted); font-size: 13px;
+  }
+  .site-foot a {
+    color: var(--accent);
+    text-decoration: none;
+    border-bottom: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  }
+  .site-foot a:hover { border-bottom-color: var(--accent); }
+  main.map-main + .site-foot { display: none; }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: .001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: .001ms !important;
+    }
+    .turn-sheet, .turn-sheet::after, #app.turn-in { animation: none !important; display: none !important; }
+  }
   h1 {
     font-family: var(--serif);
     font-weight: 400;
@@ -120,17 +224,23 @@
     background: var(--surface);
     margin-bottom: 40px;
   }
+  /* Один размер кнопок на всех экранах. */
   .btn {
-    display: inline-flex; align-items: center; gap: 8px;
-    padding: 11px 20px;
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    min-height: 40px;
+    padding: 10px 18px;
     border: 0;
     border-radius: 999px;
     background: var(--accent);
     color: #FFF8F2;
     font: inherit;
     font-size: 14px;
+    line-height: 1.2;
     cursor: pointer;
   }
+  /* В тёмной теме акцент светлее: белые буквы на нём дают 3.0 — мало для AA. */
+  html[data-theme="dark"] .btn { color: #1F1B16; }
+  html[data-theme="dark"] .btn.ghost { color: var(--ink); }
   .btn:hover { filter: brightness(1.08); }
   .btn[disabled] { opacity: .55; cursor: default; filter: none; }
   .btn.ghost {
@@ -142,10 +252,10 @@
     gap: 12px; flex-wrap: wrap; margin-bottom: 26px;
   }
   .idea-actions .back { margin-bottom: 0; }
-  .idea-actions .btn { padding: 8px 16px; font-size: 13px; }
   .hint { color: var(--ink-muted); font-size: 13px; }
   .note { font-size: 14px; }
-  .note.error { color: #B3261E; }
+  .note.error { color: var(--danger); }
+  .ask-retry { margin-top: 12px; }
   .grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
@@ -264,15 +374,15 @@
   .book-extra a:hover { border-bottom-color: var(--accent); }
   .book-delete {
     margin-left: auto; padding: 0; border: 0; background: none; font: inherit; font-size: 13px;
-    color: #B3261E; cursor: pointer; border-bottom: 1px solid color-mix(in srgb, #B3261E 40%, transparent);
+    color: var(--danger); cursor: pointer; border-bottom: 1px solid color-mix(in srgb, var(--danger) 40%, transparent);
   }
-  .book-delete:hover { border-bottom-color: #B3261E; }
+  .book-delete:hover { border-bottom-color: var(--danger); }
   .book-delete:disabled { opacity: .5; cursor: default; }
   /* «О проекте»: проблема, решение, схема работы, приватность. */
   .about { max-width: 760px; }
   .about h2 { margin: 30px 0 8px; font-family: var(--serif); font-size: 22px; font-weight: 600; }
   .about p { margin: 0 0 10px; line-height: 1.65; }
-  .about-flow { display: flex; flex-wrap: wrap; align-items: stretch; gap: 10px; margin: 16px 0 0; padding: 0; list-style: none; }
+  .about-flow { display: flex; flex-wrap: wrap; align-items: stretch; gap: 10px; margin: 16px 0 28px; padding: 0; list-style: none; }
   .about-step {
     flex: 1 1 118px; min-width: 118px; padding: 12px 14px;
     background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
@@ -888,6 +998,20 @@
     .book-head .cover { width: 170px; flex: none; }
     .book-info h1 { font-size: 30px; }
   }
+  /* Планшет: «Поиск» — иконка, «О проекте» уходит в подвал, меню компактнее. */
+  @media (max-width: 900px) {
+    .top { gap: 12px; padding: 12px 20px; }
+    .top-actions { gap: 6px; }
+    .nav-link { padding: 6px 10px; font-size: 13px; }
+    #aboutLink { display: none; }
+    #searchBtn {
+      width: 38px; height: 38px; padding: 0;
+      display: inline-flex; align-items: center; justify-content: center;
+      font-size: 0;
+    }
+    #searchBtn::before { content: "🔍"; font-size: 16px; line-height: 1; }
+    .site-foot { padding: 0 20px 40px; }
+  }
   /* Шесть пунктов меню на телефоне в одну строку не влезают — пусть переносятся. */
   @media (max-width: 480px) {
     .brand { display: none; }
@@ -906,29 +1030,34 @@
     .top { padding: 10px 14px; backdrop-filter: none; -webkit-backdrop-filter: none; }
     .top-actions {
       position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
-      margin: 0; padding: 6px 2px calc(6px + env(safe-area-inset-bottom));
+      margin: 0; padding: 7px 4px calc(7px + env(safe-area-inset-bottom));
       display: flex; flex-wrap: nowrap; justify-content: space-around;
-      gap: 0; overflow: hidden;
-      background: color-mix(in srgb, var(--bg) 94%, transparent);
-      backdrop-filter: blur(12px);
+      gap: 2px; overflow: hidden;
+      /* Без blur: backdrop-filter делал панель «рамкой» для position: fixed,
+         и кнопка темы не могла уехать в правый верхний угол. */
+      background: color-mix(in srgb, var(--bg) 97%, transparent);
       border-top: 1px solid var(--line);
     }
     .top-actions .nav-link {
       flex: 1 1 0; min-width: 0; width: auto; height: auto;
-      display: flex; flex-direction: column; align-items: center; gap: 2px;
-      padding: 4px 1px; border: none; border-radius: 10px;
-      font-size: 9px; line-height: 1.1; white-space: nowrap;
+      display: flex; flex-direction: column; align-items: center; gap: 3px;
+      padding: 5px 2px; border: none; border-radius: 12px;
+      font-size: 10px; line-height: 1.15; white-space: nowrap;
     }
     .top-actions .nav-link:hover,
     .top-actions .nav-link.active { background: var(--surface); border: none; }
-    .top-actions .nav-link::before { font-size: 16px; line-height: 1; }
+    .top-actions .nav-link::before { font-size: 19px; line-height: 1; }
+    /* Тема переезжает в правый верхний угол: в нижней панели тесно. */
     .top-actions .icon-btn {
-      flex: 1 1 0; min-width: 0; width: auto; height: auto;
-      display: flex; flex-direction: column; align-items: center; gap: 2px;
-      padding: 4px 1px; border: none; border-radius: 10px;
-      background: none; font-size: 16px; line-height: 1.1;
+      position: fixed; top: 10px; right: 14px; z-index: 31;
+      width: 36px; height: 36px; padding: 0;
+      display: inline-flex; align-items: center; justify-content: center;
+      border: 1px solid var(--line); border-radius: 999px;
+      background: var(--surface); font-size: 15px; line-height: 1;
     }
-    .top-actions .icon-btn::after { content: "Тема"; font-size: 9px; line-height: 1.1; }
+    .top-actions .icon-btn::after { content: none; }
+    #libLink { font-size: 0; }
+    #libLink::after { content: "Книги"; font-size: 10px; line-height: 1.15; }
     #libLink::before { content: "▤"; }
     #mapLink::before { content: "◈"; }
     #bridgesLink::before { content: "⇄"; }
@@ -941,7 +1070,9 @@
     .about-flow { flex-direction: column; align-items: stretch; }
   .about-step { flex: 0 0 auto; }
     .about-arrow { align-self: center; transform: rotate(90deg); }
-    main { padding-bottom: calc(74px + env(safe-area-inset-bottom)); }
+    main { padding-bottom: 12px; }
+    /* Подвал сам освобождает место под нижнюю панель. */
+    .site-foot { padding: 0 16px calc(78px + env(safe-area-inset-bottom)); }
     main.map-main {
       height: calc(100dvh - 54px - 66px - env(safe-area-inset-bottom));
     }
@@ -1020,6 +1151,18 @@
 </header>
 
 <main id="app"></main>
+
+<footer class="site-foot">
+  <a href="#/about">О проекте</a> — как работает Marginalia и что происходит с вашими файлами.
+</footer>
+
+<!-- Бледные обложки на фоне, как в макете. -->
+<div class="page-wm" id="pageWm" aria-hidden="true">
+  <span class="wm-cover" style="--book: var(--book-a)"><span>Думай медленно… решай быстро</span></span>
+  <span class="wm-cover" style="--book: var(--book-b)"><span>Чёрный лебедь</span></span>
+  <span class="wm-cover" style="--book: var(--book-c)"><span>Наедине с собой</span></span>
+  <span class="wm-cover" style="--book: var(--book-e)"><span>Антихрупкость</span></span>
+</div>
 
 <div class="search-overlay" id="searchOverlay" hidden>
   <div class="search-box" role="dialog" aria-modal="true" aria-label="Поиск по библиотеке">
@@ -2968,6 +3111,7 @@
 
   // «Спросить»: вопрос ко всей библиотеке, ответ модели со сносками [1], [2].
   let askLast = null;  // последний ответ: возвращаемся со сноски — он на месте
+  let askFailed = "";  // вопрос, на котором модель споткнулась: кнопка «Повторить»
 
   /** Ответ «Спросить» как Markdown — чтобы вставить в заметку или отправить. */
   function askMarkdown(data) {
@@ -3051,8 +3195,10 @@
       result.innerHTML = askResultHtml(data);
     } catch (error) {
       if (!result.isConnected) return;
+      askFailed = question;
       note.textContent = "";
-      result.innerHTML = '<p class="bridge-empty">' + esc(error.message) + '</p>';
+      result.innerHTML = '<p class="note error">' + esc(error.message) + '</p>'
+        + '<button class="btn ask-retry" id="askRetry" type="button">Повторить</button>';
     } finally {
       if (send.isConnected) send.disabled = false;
     }
@@ -3102,6 +3248,10 @@
       const copy = event.target.closest("#askCopy");
       if (copy) {
         if (askLast) copyText(copy, askMarkdown(askLast));
+        return;
+      }
+      if (event.target.closest("#askRetry")) {
+        runAsk(askFailed || input.value.trim());
         return;
       }
       const hint = event.target.closest(".ask-hint");
@@ -3708,7 +3858,67 @@
     openPendingFocus();
   }
 
+  // Заголовок вкладки браузера — по экрану.
+  function setPageTitle() {
+    const hash = location.hash || "#/";
+    let name = "";
+    if (hash === "#/map") name = "Карта идей";
+    else if (hash === "#/review") name = "Повторение";
+    else if (hash.startsWith("#/debate")) name = "Спор авторов";
+    else if (hash === "#/ask") name = "Спросить библиотеку";
+    else if (hash === "#/bridges") name = "Мосты между книгами";
+    else if (hash === "#/about") name = "О проекте";
+    else if (hash.startsWith("#/idea/")) name = "Идея";
+    else {
+      const title = app.querySelector("h1");
+      name = title ? title.textContent.trim() : "";
+    }
+    document.title = name && name !== "Библиотека"
+      ? name + " — Marginalia"
+      : "Marginalia — библиотека";
+  }
+
+  // Переворот страницы: снимок старого экрана улетает, новый проявляется.
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+
+  function swapSheet() {
+    if (reduceMotion.matches || !app.firstElementChild) return;
+    const box = app.getBoundingClientRect();
+    const padding = getComputedStyle(app).padding;
+    const sheet = app.cloneNode(true);
+    sheet.removeAttribute("id");
+    sheet.querySelectorAll("[id]").forEach((node) => node.removeAttribute("id"));
+    sheet.classList.remove("turn-in");
+    sheet.classList.add("turn-sheet");
+    sheet.style.top = box.top + "px";
+    sheet.style.left = box.left + "px";
+    sheet.style.width = box.width + "px";
+    sheet.style.height = Math.min(box.height, window.innerHeight) + "px";
+    sheet.style.padding = padding;
+    document.body.appendChild(sheet);
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => sheet.classList.add("turn-out"));
+    });
+    setTimeout(() => sheet.remove(), 700);
+  }
+
+  let lastHash = null;
+
   function route() {
+    const hash = location.hash;
+    const changed = lastHash !== null && hash !== lastHash;
+    lastHash = hash;
+    if (changed) swapSheet();
+    renderRoute();
+    setPageTitle();
+    app.classList.remove("turn-in");
+    if (changed && !reduceMotion.matches) {
+      void app.offsetWidth;  // перезапустить анимацию появления
+      app.classList.add("turn-in");
+    }
+  }
+
+  function renderRoute() {
     const onMap = location.hash === "#/map";
     const onBridges = location.hash === "#/bridges";
     const onAsk = location.hash === "#/ask";
@@ -3717,6 +3927,7 @@
     const onReview = location.hash === "#/review";
     const onAbout = location.hash === "#/about";
     app.classList.toggle("map-main", onMap);
+    document.getElementById("pageWm").classList.toggle("is-off", onMap);
     mapLink.classList.toggle("active", onMap);
     bridgesLink.classList.toggle("active", onBridges);
     askLink.classList.toggle("active", onAsk);
@@ -3775,20 +3986,43 @@
   let searchTimer = null;
   let searchSeq = 0;
 
-  /** Подсвечиваем совпадения, остальное экранируем. */
+  /** Корень слова: «свободы», «свободе», «свободой» → «свобод». */
+  const WORD_ENDINGS = [
+    "иями", "ями", "ами", "ого", "его", "ому", "ему", "ыми", "ими", "иях",
+    "ях", "ах", "ов", "ев", "ей", "ой", "ый", "ий", "ая", "яя", "ое", "ее",
+    "ые", "ие", "ам", "ям", "ом", "ем", "ую", "юю", "ию", "ия", "ии", "ою",
+    "ею", "а", "я", "о", "е", "ы", "и", "у", "ю",
+  ];
+  function wordStem(word) {
+    const value = word.toLowerCase();
+    for (const end of WORD_ENDINGS) {
+      if (value.length - end.length >= 3 && value.endsWith(end)) {
+        return value.slice(0, value.length - end.length);
+      }
+    }
+    return value;
+  }
+
+  /** Подсвечиваем все формы слова запроса, остальное экранируем. */
   function markText(text, query) {
     const value = String(text ?? "");
-    const needle = (query || "").trim().toLowerCase();
-    if (!needle) return esc(value);
-    const lower = value.toLowerCase();
-    let out = "", from = 0, at = lower.indexOf(needle);
-    while (at !== -1) {
-      out += esc(value.slice(from, at)) + "<mark>"
-        + esc(value.slice(at, at + needle.length)) + "</mark>";
-      from = at + needle.length;
-      at = lower.indexOf(needle, from);
+    const stems = [];
+    ((query || "").toLowerCase().match(/[\p{L}\p{N}]+/gu) || []).forEach((token) => {
+      const stem = wordStem(token);
+      if (stem.length >= 3 && !stems.includes(stem)) stems.push(stem);
+    });
+    if (!stems.length) return esc(value);
+    const wordRe = /[\p{L}\p{N}]+/gu;
+    let out = "", last = 0, match;
+    while ((match = wordRe.exec(value))) {
+      const lower = match[0].toLowerCase();
+      out += esc(value.slice(last, match.index));
+      out += stems.some((stem) => lower.startsWith(stem))
+        ? "<mark>" + esc(match[0]) + "</mark>"
+        : esc(match[0]);
+      last = match.index + match[0].length;
     }
-    return out + esc(value.slice(from));
+    return out + esc(value.slice(last));
   }
 
   function searchItem(target, title, meta, quote, query) {
