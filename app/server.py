@@ -32,6 +32,7 @@ MAX_NOTE_BYTES = 20000  # тело запроса с заметкой
 MAX_NOTE_CHARS = 5000   # длина самой заметки
 MAX_IDEA_CHARS = 1000   # длина идеи после правки
 MAX_QUESTION_CHARS = 500  # длина вопроса к библиотеке
+LINK_KINDS = ("supports", "contradicts", "extends", "example", "same")
 
 
 def connect() -> sqlite3.Connection:
@@ -114,6 +115,7 @@ def init_db() -> None:
                 from_id INTEGER NOT NULL,
                 to_id INTEGER NOT NULL,
                 verdict TEXT NOT NULL,
+                type TEXT NOT NULL DEFAULT '',
                 updated TEXT NOT NULL,
                 PRIMARY KEY (from_id, to_id)
             );
@@ -145,6 +147,10 @@ def init_db() -> None:
         columns = {row["name"] for row in db.execute("PRAGMA table_info(ideas)")}
         if "title" not in columns:
             db.execute("ALTER TABLE ideas ADD COLUMN title TEXT NOT NULL DEFAULT ''")
+        # Тип связи, который студент поправил вручную (пусто — тип от модели).
+        columns = {row["name"] for row in db.execute("PRAGMA table_info(link_marks)")}
+        if "type" not in columns:
+            db.execute("ALTER TABLE link_marks ADD COLUMN type TEXT NOT NULL DEFAULT ''")
 
 
 def read_txt(body: bytes, filename: str) -> dict:
@@ -237,10 +243,17 @@ def get_book(book_id: str) -> dict | None:
         key_count = db.execute(
             "SELECT COUNT(*) FROM key_ideas WHERE book_id = ?", (book_id,)
         ).fetchone()[0]
-        link_count, contradiction_count = db.execute(
-            "SELECT COUNT(*), COUNT(CASE WHEN type = 'contradicts' THEN 1 END)"
-            " FROM links WHERE from_id IN (SELECT id FROM ideas WHERE book_id = ?)"
-            " OR to_id IN (SELECT id FROM ideas WHERE book_id = ?)",
+        # Тип берём с поправкой студента, если она есть; «проверено» — связи,
+        # у которых стоит отметка «Верно» или «Неверно».
+        link_count, contradiction_count, checked_count = db.execute(
+            "SELECT COUNT(*),"
+            " COUNT(CASE WHEN COALESCE(NULLIF(lm.type, ''), l.type) = 'contradicts'"
+            "            THEN 1 END),"
+            " COUNT(CASE WHEN COALESCE(lm.verdict, '') <> '' THEN 1 END)"
+            " FROM links l"
+            " LEFT JOIN link_marks lm ON lm.from_id = l.from_id AND lm.to_id = l.to_id"
+            " WHERE l.from_id IN (SELECT id FROM ideas WHERE book_id = ?)"
+            "    OR l.to_id IN (SELECT id FROM ideas WHERE book_id = ?)",
             (book_id, book_id),
         ).fetchone()
         idea_counts = {
@@ -265,6 +278,7 @@ def get_book(book_id: str) -> dict | None:
     result["key_count"] = key_count
     result["link_count"] = link_count
     result["contradiction_count"] = contradiction_count
+    result["checked_count"] = checked_count
     result["chapters"] = [
         {**dict(row), "ideas": idea_counts.get(row["idx"], 0),
          "links": link_counts.get(row["idx"], 0)}
@@ -326,10 +340,12 @@ def get_idea(idea_id: int) -> dict | None:
         if row is None:
             return None
         links = db.execute(
-            "SELECT l.type, l.explanation, l.confidence,"
+            "SELECT COALESCE(NULLIF(m.type, ''), l.type) AS type,"
+            " l.explanation, l.confidence,"
             " o.id AS idea_id, o.idea, o.quote, o.why, o.chapter,"
             " b.title AS book_title, c.title AS chapter_title"
             " FROM links l"
+            " LEFT JOIN link_marks m ON m.from_id = l.from_id AND m.to_id = l.to_id"
             " JOIN ideas o ON o.id = l.to_id"
             " JOIN books b ON b.id = o.book_id"
             " LEFT JOIN chapters c ON c.book_id = o.book_id AND c.idx = o.chapter"
@@ -391,7 +407,9 @@ def get_graph(all_ideas: bool = False) -> dict:
             + where + " ORDER BY i.id"
         ).fetchall()]
         links = [dict(row) for row in db.execute(
-            "SELECT l.from_id, l.to_id, l.type, l.explanation, l.confidence,"
+            "SELECT l.from_id, l.to_id,"
+            " COALESCE(NULLIF(m.type, ''), l.type) AS type,"
+            " l.type AS base_type, l.explanation, l.confidence,"
             " COALESCE(m.verdict, '') AS verdict"
             " FROM links l"
             " LEFT JOIN link_marks m ON m.from_id = l.from_id AND m.to_id = l.to_id"
@@ -416,25 +434,39 @@ def set_verdict(idea_id: int, verdict: str) -> None:
         )
 
 
-def set_link_verdict(from_id: int, to_id: int, verdict: str) -> bool:
-    """Оценка связи читателем. False — такой связи нет."""
+def set_link_verdict(from_id: int, to_id: int, verdict: str | None = None,
+                     link_type: str | None = None) -> bool:
+    """Отметка читателя у связи: «Верно / Неверно» и/или свой тип.
+
+    None означает «не менять»: снятие вердикта не стирает поправку типа,
+    и наоборот. False — такой связи нет.
+    """
     with connect() as db:
         found = db.execute(
             "SELECT 1 FROM links WHERE from_id = ? AND to_id = ?", (from_id, to_id)
         ).fetchone()
         if found is None:
             return False
-        if not verdict:
+        row = db.execute(
+            "SELECT verdict, type FROM link_marks WHERE from_id = ? AND to_id = ?",
+            (from_id, to_id),
+        ).fetchone()
+        old_verdict = row["verdict"] if row else ""
+        old_type = row["type"] if row else ""
+        new_verdict = old_verdict if verdict is None else verdict
+        new_type = old_type if link_type is None else link_type
+        if not new_verdict and not new_type:
             db.execute(
                 "DELETE FROM link_marks WHERE from_id = ? AND to_id = ?", (from_id, to_id)
             )
             return True
         updated = datetime.now(timezone.utc).isoformat(timespec="seconds")
         db.execute(
-            "INSERT INTO link_marks (from_id, to_id, verdict, updated) VALUES (?, ?, ?, ?)"
+            "INSERT INTO link_marks (from_id, to_id, verdict, type, updated)"
+            " VALUES (?, ?, ?, ?, ?)"
             " ON CONFLICT(from_id, to_id) DO UPDATE SET verdict = excluded.verdict,"
-            " updated = excluded.updated",
-            (from_id, to_id, verdict, updated),
+            " type = excluded.type, updated = excluded.updated",
+            (from_id, to_id, new_verdict, new_type, updated),
         )
     return True
 
@@ -681,13 +713,18 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json(result)
 
     def review_answer(self, card_id: int) -> None:
-        """Ответ на карточку повторения: «Помню» или «Не помню»."""
+        """Ответ на карточку: «Помню», «Трудно» или «Не помню»."""
         data = self.read_json_body("Не вижу ответа.")
         if data is None:
             return
-        remembered = bool(data.get("remembered"))
+        rating = str(data.get("rating") or "").strip().lower()
+        if not rating:                              # старый формат: {"remembered": true}
+            rating = "remember" if data.get("remembered") else "forget"
+        if rating not in ("remember", "hard", "forget"):
+            self.send_error_text(400, "Ответ должен быть remember, hard или forget.")
+            return
         from review import answer_card              # review берёт connect из этого модуля
-        result = answer_card(card_id, remembered)
+        result = answer_card(card_id, rating)
         if result is None:
             self.send_error_text(404, "Карточка не найдена.")
             return
@@ -725,18 +762,30 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json({"ok": True, "verdict": verdict})
 
     def save_link_mark(self, from_id: int, to_id: int) -> None:
-        """Оценка связи: {"verdict": "right" | "wrong" | ""}."""
+        """Отметка связи: {"verdict": "right" | "wrong" | ""} и/или {"type": ...}."""
         data = self.read_json_body("Пустой запрос.")
         if data is None:
             return
-        verdict = str(data.get("verdict") or "").strip().lower()
-        if verdict not in ("", "right", "wrong"):
-            self.send_error_text(400, "Оценка должна быть right, wrong или пустой.")
+        verdict = data.get("verdict")
+        if verdict is not None:
+            verdict = str(verdict).strip().lower()
+            if verdict not in ("", "right", "wrong"):
+                self.send_error_text(400, "Оценка должна быть right, wrong или пустой.")
+                return
+        link_type = data.get("type")
+        if link_type is not None:
+            link_type = str(link_type).strip().lower()
+            if link_type not in ("",) + LINK_KINDS:
+                self.send_error_text(400, "Тип должен быть supports, contradicts,"
+                                          " extends, example, same или пустой.")
+                return
+        if verdict is None and link_type is None:
+            self.send_error_text(400, "Не вижу, что менять: нужен verdict или type.")
             return
-        if not set_link_verdict(from_id, to_id, verdict):
+        if not set_link_verdict(from_id, to_id, verdict, link_type):
             self.send_error_text(404, "Связь не найдена.")
             return
-        self.send_json({"ok": True, "verdict": verdict})
+        self.send_json({"ok": True, "verdict": verdict, "type": link_type})
 
     def save_edit(self, idea_id: int) -> None:
         """Исправление идеи: {"idea": "новый текст"}."""

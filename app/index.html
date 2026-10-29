@@ -168,6 +168,15 @@
     border: 1px solid var(--line); border-radius: 999px;
     color: var(--ink-muted); font-size: 12px;
   }
+  /* Плашка «Повторить: N карточек» на библиотеке. */
+  .review-badge {
+    display: inline-flex; align-items: baseline; gap: 10px; margin-top: 18px;
+    padding: 10px 16px; border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line));
+    border-radius: 999px; background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+    color: var(--ink); font-size: 14px; text-decoration: none;
+  }
+  .review-badge b { font-weight: 600; color: var(--accent); }
+  .review-badge:hover { border-color: var(--accent); }
   /* «Связь дня» — самая уверенная связь, каждый день другая. */
   .link-day {
     margin: 28px 0 34px; padding: 20px 22px;
@@ -239,6 +248,9 @@
     margin: 20px 0 0; max-width: 64ch;
     color: var(--ink-muted); font-size: 15px; line-height: 1.65;
   }
+  .book-extra { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 22px; margin-top: 16px; font-size: 13px; color: var(--ink-muted); }
+  .book-extra a { color: var(--accent); text-decoration: none; border-bottom: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); }
+  .book-extra a:hover { border-bottom-color: var(--accent); }
   .chapters { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
   .chapter-row {
     display: flex; align-items: baseline; gap: 16px;
@@ -492,6 +504,11 @@
   .vbtn:hover { border-color: var(--ink-muted); }
   .vbtn.right.on { color: var(--supports); border-color: var(--supports); background: color-mix(in srgb, var(--supports) 12%, var(--surface)); }
   .vbtn.wrong.on { color: var(--contradicts); border-color: var(--contradicts); background: color-mix(in srgb, var(--contradicts) 12%, var(--surface)); }
+  .p-type { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; font-size: 13px; color: var(--ink-muted); }
+  .p-type select {
+    flex: 1 1 190px; min-width: 0; padding: 7px 10px; border: 1px solid var(--line);
+    border-radius: 8px; background: var(--surface); color: var(--ink); font: inherit; font-size: 13px;
+  }
   .p-edit { width: 100%; }
   .p-edit textarea {
     width: 100%; margin: 8px 0; padding: 10px 12px;
@@ -569,6 +586,7 @@
     padding: 7px 12px; border: 1px solid var(--line); border-radius: 999px;
     background: var(--surface); color: var(--ink);
     font: inherit; font-size: 12px; white-space: nowrap; cursor: pointer;
+    text-decoration: none;
   }
   .bridge-open:hover { border-color: var(--ink-muted); }
   .bridge-empty {
@@ -919,12 +937,35 @@
         <span class="hint">EPUB или TXT, до 100 МБ</span>
         <span class="note" id="note"></span>
       </div>
+      <div id="reviewBadge"></div>
       <div id="linkDay"></div>
       <div id="shelf"></div>`;
 
     document.getElementById("addBtn").addEventListener("click", () => fileInput.click());
     loadShelf();
+    loadReviewBadge();
     loadLinkOfDay();
+  }
+
+  // Плашка «Повторить: N карточек» — сколько карточек ждёт сегодня.
+  async function loadReviewBadge() {
+    const slot = document.getElementById("reviewBadge");
+    if (!slot) return;
+    let data;
+    try {
+      data = await api("api/review/today");
+    } catch (error) {
+      if (slot.isConnected) slot.innerHTML = '<p class="note error">' + esc(error.message) + '</p>';
+      return;
+    }
+    if (!slot.isConnected) return;
+    const left = Math.max(0, (Number(data.total) || 0) - (Number(data.answered_today) || 0));
+    if (!left) {
+      slot.innerHTML = "";
+      return;
+    }
+    slot.innerHTML = '<a class="review-badge" href="#/review">Повторить: <b>'
+      + left + '</b> ' + plural(left, "карточка", "карточки", "карточек") + ' →</a>';
   }
 
   // Самая уверенная связь дня: из нескольких самых сильных выбираем одну
@@ -1105,6 +1146,11 @@
             <div class="fact"><b>${book.link_count}</b><span>${linksWord(book.link_count)}</span></div>
             <div class="fact"><b>${book.contradiction_count}</b><span>${plural(book.contradiction_count, "противоречие", "противоречия", "противоречий")}</span></div>
             <div class="fact"><b>${esc((book.lang || "—").toUpperCase())}</b><span>язык</span></div>
+          </div>
+          <div class="book-extra">
+            <span>Проверено вами: <b>${book.checked_count || 0}</b> из ${book.link_count} ${linksWord(book.link_count)}</span>
+            <a href="#/debate/${encodeURIComponent(id)}">Спор авторов →</a>
+            <a href="#/bridges">Мосты между книгами →</a>
           </div>
           ${summary ? `<p class="book-about">${esc(firstSentences(summary.about, 3))}</p>` : ""}
         </div>
@@ -2153,6 +2199,13 @@
       + (idea.quote ? '<blockquote class="p-quote"><i>«' + esc(idea.quote) + '»</i></blockquote>' : "")
       + '</div>';
     const verdict = link.verdict === "right" || link.verdict === "wrong" ? link.verdict : "";
+    const baseType = link.base_type || link.type;
+    const changed = link.type !== baseType;
+    const typeOptions = '<option value="">Как у модели — '
+      + esc(LINK_TYPES[baseType] || baseType) + '</option>'
+      + Object.keys(LINK_TYPES).map((key) => '<option value="' + key + '"'
+        + (changed && key === link.type ? ' selected' : '') + '>'
+        + esc(LINK_TYPES[key]) + '</option>').join('');
     panel.innerHTML = ''
       + '<button type="button" class="p-close" title="Закрыть">✕</button>'
       + '<p class="p-kicker" style="color:' + style.color + '">' + style.icon + ' '
@@ -2170,11 +2223,16 @@
       + '" data-link-verdict="right">✓ Верно</button>'
       + '<button type="button" class="vbtn wrong' + (verdict === "wrong" ? " on" : "")
       + '" data-link-verdict="wrong">✕ Неверно</button>'
-      + '</div>';
+      + '</div>'
+      + '<label class="p-type"><span>Изменить тип:</span>'
+      + '<select data-link-type>' + typeOptions + '</select></label>';
     panel.hidden = false;
     panel.querySelector(".p-close").addEventListener("click", () => selectIdea(null));
     panel.querySelectorAll("[data-link-verdict]").forEach((button) => {
       button.addEventListener("click", () => saveLinkVerdict(link, button.dataset.linkVerdict));
+    });
+    panel.querySelector("[data-link-type]").addEventListener("change", (event) => {
+      saveLinkType(link, event.target.value);
     });
   }
 
@@ -2190,7 +2248,24 @@
         }
       );
       link.verdict = data.verdict;
-      renderPanel();
+      renderMapScreen();
+    } catch (error) {
+      alert(error.message);
+    }
+  }
+
+  async function saveLinkType(link, type) {
+    try {
+      const data = await api(
+        "api/links/" + Number(link.from_id) + "-" + Number(link.to_id) + "/mark",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ type }),
+        }
+      );
+      link.type = data.type || link.base_type || link.type;
+      renderMapScreen();
     } catch (error) {
       alert(error.message);
     }
@@ -2301,6 +2376,8 @@
         : "")
       + '<button type="button" class="bridge-open" data-open-pair="'
       + link.from_id + '-' + link.to_id + '">На карте →</button>'
+      + '<a class="bridge-open" href="#/debate/' + encodeURIComponent(first.book_id)
+      + '/' + encodeURIComponent(second.book_id) + '">Спор авторов →</a>'
       + '</footer>'
       + '</article>';
   }
@@ -2796,6 +2873,21 @@
     }
     const style = LINK_STYLES[card.link_type] || LINK_STYLES.same;
     const why = card.explanation || "Связь найдена по смыслу.";
+    const pairLinks = '<p class="review-why">Уверенность '
+      + Math.round(Number(card.confidence) * 100) + '% · <a href="#/idea/'
+      + encodeURIComponent(card.from_id) + '">идея А</a> · <a href="#/idea/'
+      + encodeURIComponent(card.to_id) + '">идея Б</a></p>';
+    if (card.kind === "author") {
+      return ''
+        + '<p class="review-label">Кто спорит</p>'
+        + '<p class="review-thesis">' + esc(card.to_book_title) + ' — «'
+        + esc(card.to_idea) + '»</p>'
+        + (card.to_quote
+          ? '<blockquote class="review-quote">«' + esc(card.to_quote) + '»</blockquote>'
+          : "")
+        + '<p class="review-why">' + esc(why) + '</p>'
+        + pairLinks;
+    }
     return ''
       + '<p class="review-label">Связь идей</p>'
       + '<p class="review-thesis">'
@@ -2803,9 +2895,7 @@
       + ';background:color-mix(in srgb, ' + style.color + ' 16%, transparent)">'
       + style.icon + ' ' + esc(LINK_TYPES[card.link_type] || card.link_type) + '</span>'
       + esc(why) + '</p>'
-      + '<p class="review-why">Уверенность ' + Math.round(Number(card.confidence) * 100)
-      + '% · <a href="#/idea/' + encodeURIComponent(card.from_id) + '">идея А</a>'
-      + ' · <a href="#/idea/' + encodeURIComponent(card.to_id) + '">идея Б</a></p>';
+      + pairLinks;
   }
 
   function reviewQuestionMarkup(card) {
@@ -2813,6 +2903,13 @@
       return ''
         + '<h2 class="review-q">Какую мысль автор доказывает этой цитатой?</h2>'
         + '<blockquote class="review-quote">«' + esc(card.quote) + '»</blockquote>';
+    }
+    if (card.kind === "author") {
+      return ''
+        + '<h2 class="review-q">Кто из авторов не согласился бы с этим?</h2>'
+        + '<blockquote class="review-quote">«' + esc(card.from_quote || card.from_idea) + '»</blockquote>'
+        + '<p class="review-why">' + esc(card.from_book_title)
+        + (card.from_chapter ? ' · глава ' + esc(String(card.from_chapter)) : "") + '</p>';
     }
     return ''
       + '<h2 class="review-q">Как связаны эти идеи?</h2>'
@@ -2834,8 +2931,9 @@
     app.innerHTML = ''
       + '<section class="review">'
       + '<h1>Повторить</h1>'
-      + '<p class="lead">Пять карточек в день из ключевых идей и связей. '
-      + '«Помню» возвращает карточку через 3, 7 и 21 день, «Не помню» — завтра.</p>'
+      + '<p class="lead">Каждый день небольшая стопка карточек: ключевые идеи, связи и споры '
+      + 'авторов. «Помню» откладывает карточку на 1, 3, 7, 21 и 60 дней, «Трудно» — '
+      + 'на шаг назад, «Не помню» — на завтра и с начала.</p>'
       + '<div class="review-bar">'
       + '<span id="reviewProgress">Загружаю карточки…</span>'
       + '<span class="review-day" id="reviewDay"></span>'
@@ -2859,7 +2957,7 @@
     if (!body.isConnected) return;
 
     const queue = data.cards || [];
-    const total = Number(data.total) || 5;
+    const total = Number(data.total) || 7;
     let answered = Number(data.answered_today) || 0;
     let nextDue = data.next_due || null;
     let index = 0;
@@ -2888,10 +2986,12 @@
         return;
       }
       const card = queue[index];
+      const kindLabel = card.kind === "idea" ? "Ключевая идея"
+        : card.kind === "author" ? "Спор авторов" : "Связь идей";
       body.innerHTML = ''
         + '<article class="review-card">'
         + '<p class="review-kind">Карточка ' + (answered + 1) + " из " + total + ' · '
-        + (card.kind === "idea" ? "Ключевая идея" : "Связь идей") + '</p>'
+        + kindLabel + '</p>'
         + reviewQuestionMarkup(card)
         + '<div class="review-answer" id="reviewAnswer" hidden>' + reviewAnswerMarkup(card) + '</div>'
         + '<div class="review-actions" id="reviewActions">'
@@ -2907,14 +3007,16 @@
       function reveal() {
         answer.hidden = false;
         actions.innerHTML = ''
-          + '<button class="btn" id="reviewRemember" type="button">Помню</button>'
-          + '<button class="btn review-again" id="reviewForget" type="button">Не помню</button>';
-        body.querySelector("#reviewRemember").addEventListener("click", () => rate(true));
-        body.querySelector("#reviewForget").addEventListener("click", () => rate(false));
+          + '<button class="btn review-again" id="reviewForget" type="button">Не помню</button>'
+          + '<button class="btn review-again" id="reviewHard" type="button">Трудно</button>'
+          + '<button class="btn" id="reviewRemember" type="button">Помню</button>';
+        body.querySelector("#reviewForget").addEventListener("click", () => rate("forget"));
+        body.querySelector("#reviewHard").addEventListener("click", () => rate("hard"));
+        body.querySelector("#reviewRemember").addEventListener("click", () => rate("remember"));
         body.querySelector("#reviewRemember").focus();
       }
 
-      async function rate(remembered) {
+      async function rate(rating) {
         const buttons = actions.querySelectorAll("button");
         buttons.forEach((button) => { button.disabled = true; });
         flash.textContent = "Сохраняю…";
@@ -2923,7 +3025,7 @@
           result = await api("api/review/" + card.id + "/answer", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ remembered: remembered }),
+            body: JSON.stringify({ rating: rating }),
           });
         } catch (error) {
           if (!body.isConnected) return;
@@ -2934,10 +3036,14 @@
         if (!body.isConnected) return;
         answered = Number(result.answered_today) || answered + 1;
         nextDue = result.due || nextDue;
-        flash.textContent = remembered
-          ? "Помню — вернётся через " + result.interval + " "
-            + plural(Number(result.interval), "день", "дня", "дней") + "."
-          : "Не помню — вернётся завтра, с начала.";
+        const days = Number(result.interval) || 1;
+        flash.textContent = rating === "remember"
+          ? "Помню — вернётся через " + days + " "
+            + plural(days, "день", "дня", "дней") + "."
+          : rating === "hard"
+            ? "Трудно — вернётся через " + days + " "
+              + plural(days, "день", "дня", "дней") + "."
+            : "Не помню — вернётся завтра, с начала.";
         index += 1;
         window.setTimeout(() => {
           if (body.isConnected) renderCard();
@@ -3030,8 +3136,13 @@
     }
     if (onDebate) {
       const pair = location.hash.match(/^#\/debate\/([^/]+)\/([^/]+)$/);
-      showDebate(pair ? decodeURIComponent(pair[1]) : "",
-                 pair ? decodeURIComponent(pair[2]) : "");
+      if (pair) {
+        showDebate(decodeURIComponent(pair[1]), decodeURIComponent(pair[2]));
+        return;
+      }
+      // #/debate/<книга> — открываем выбор второй книги с уже выбранной первой.
+      const one = location.hash.match(/^#\/debate\/([^/]+)$/);
+      showDebate(one ? decodeURIComponent(one[1]) : "", "");
       return;
     }
     const idea = location.hash.match(/^#\/idea\/(\d+)$/);

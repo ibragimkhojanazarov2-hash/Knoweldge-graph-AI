@@ -71,7 +71,9 @@ def load_links(book_a: str, book_b: str) -> list[dict]:
 
     with connect() as db:
         rows = db.execute(
-            "SELECT l.from_id, l.to_id, l.type, l.explanation, l.confidence,"
+            "SELECT l.from_id, l.to_id,"
+            " COALESCE(NULLIF(lm.type, ''), l.type) AS type,"
+            " l.explanation, l.confidence,"
             " fi.book_id AS from_book, fi.chapter AS from_chapter,"
             " fi.idea AS from_idea, fi.quote AS from_quote,"
             " fc.title AS from_chapter_title,"
