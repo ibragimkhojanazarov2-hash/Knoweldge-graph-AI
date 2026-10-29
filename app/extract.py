@@ -66,6 +66,10 @@ def parse_ideas(answer: str) -> list[dict]:
 MIN_RATIO = 0.9  # насколько цитата должна быть похожа на текст главы
 
 SERVICE_MIN = 1500  # глава короче этого — служебная
+SERVICE_TITLEPAGE_MAX = 4000  # титул длиннее этого не бывает
+
+# Метки выходных данных на титульной странице.
+SERVICE_MARKS = ("copyright", "isbn", "все права защищены", "©")
 
 # Служебные главы: заголовок говорит сам за себя.
 SERVICE_TITLES = (
@@ -75,10 +79,17 @@ SERVICE_TITLES = (
 )
 
 
-def service_reason(chapter: dict) -> str | None:
+def plain(text: str) -> str:
+    """Для сравнения заголовков: нижний регистр, ё → е, без знаков препинания."""
+    text = (text or "").lower().replace("ё", "е")
+    return " ".join("".join(ch if ch.isalnum() or ch.isspace() else " " for ch in text).split())
+
+
+def service_reason(chapter: dict, book_title: str | None = None) -> str | None:
     """Почему глава служебная (None — обычная глава с текстом книги).
 
     chapter — строка из get_book (idx, title, chars) или из get_chapter (idx, title, text).
+    book_title — название книги: первая глава, чей заголовок повторяет его, — титул.
     """
     if not isinstance(chapter, dict):
         chapter = dict(chapter)
@@ -91,6 +102,13 @@ def service_reason(chapter: dict) -> str | None:
         chars = len((chapter.get("text") or "").strip())
     if chars < SERVICE_MIN:
         return f"короткая глава, {chars} знаков"
+    if chars < SERVICE_TITLEPAGE_MAX and chapter.get("idx") == 1:
+        book = plain(book_title or "")
+        if book and book in plain(chapter.get("title")):
+            return f"титул: заголовок главы повторяет название книги, {chars} знаков"
+        head = (chapter.get("text") or chapter.get("head") or "")[:300].lower()
+        if any(mark in head for mark in SERVICE_MARKS):
+            return f"титул: выходные данные в начале главы, {chars} знаков"
     return None
 
 
@@ -233,14 +251,16 @@ def extract_chapter(book_id: str, chapter: dict) -> tuple[int, int]:
 def clean_service(book_id: str) -> None:
     """Удаляет идеи служебных глав книги и все связи, которые на них ссылаются."""
     with connect() as db:
+        row = db.execute("SELECT title FROM books WHERE id = ?", (book_id,)).fetchone()
+        book_title = row["title"] if row else None
         chapters = db.execute(
-            "SELECT idx, title, length(text) AS chars FROM chapters"
-            " WHERE book_id = ? ORDER BY idx", (book_id,)
+            "SELECT idx, title, length(text) AS chars, substr(text, 1, 300) AS head"
+            " FROM chapters WHERE book_id = ? ORDER BY idx", (book_id,)
         ).fetchall()
         if not chapters:
             print(f"Книга {book_id} не найдена.", file=sys.stderr)
             raise SystemExit(1)
-        service = [(c["idx"], service_reason(dict(c))) for c in chapters]
+        service = [(c["idx"], service_reason(dict(c), book_title)) for c in chapters]
         service = [(idx, reason) for idx, reason in service if reason]
         if not service:
             print("Служебных глав нет, чистить нечего.", flush=True)
@@ -255,6 +275,15 @@ def clean_service(book_id: str) -> None:
         links = key_ideas = 0
         if idea_ids:
             id_marks = ",".join("?" * len(idea_ids))
+            link_ids = [r[0] for r in db.execute(
+                f"SELECT id FROM links WHERE from_id IN ({id_marks}) OR to_id IN ({id_marks})",
+                (*idea_ids, *idea_ids),
+            )]
+            sources = [f"idea:{i}" for i in idea_ids] + [f"link:{i}" for i in link_ids]
+            db.execute(
+                f"DELETE FROM reviews WHERE source IN ({','.join('?' * len(sources))})",
+                sources,
+            )
             links = db.execute(
                 f"DELETE FROM links WHERE from_id IN ({id_marks}) OR to_id IN ({id_marks})",
                 (*idea_ids, *idea_ids),
@@ -270,7 +299,14 @@ def clean_service(book_id: str) -> None:
             f"DELETE FROM key_ideas WHERE book_id = ? AND chapter IN ({marks})",
             (book_id, *(idx for idx, _ in service)),
         ).rowcount
-    print(f"Удалено: идей {len(idea_ids)}, связей {links}, ключевых идей {key_ideas}.", flush=True)
+        # Отметки проверки на идеи и связи, которых уже нет, показывать некому.
+        dangling = db.execute(
+            "DELETE FROM reviews WHERE"
+            " (source LIKE 'idea:%' AND CAST(substr(source, 6) AS INTEGER) NOT IN (SELECT id FROM ideas))"
+            " OR (source LIKE 'link:%' AND CAST(substr(source, 6) AS INTEGER) NOT IN (SELECT id FROM links))"
+        ).rowcount
+    print(f"Удалено: идей {len(idea_ids)}, связей {links}, ключевых идей {key_ideas}"
+          + (f", осиротевших отметок {dangling}" if dangling else "") + ".", flush=True)
 
 
 def main() -> None:
@@ -293,7 +329,7 @@ def main() -> None:
     if where == "all":
         indexes = []
         for chapter in book["chapters"]:
-            reason = service_reason(chapter)
+            reason = service_reason(chapter, book["title"])
             if reason:
                 print(f"Пропускаю главу {chapter['idx']} «{chapter['title']}»: {reason}", flush=True)
                 continue
@@ -308,7 +344,7 @@ def main() -> None:
         if chapter is None:
             print(f"Глава {chapter_idx} книги {book_id} не найдена.", file=sys.stderr)
             raise SystemExit(1)
-        reason = service_reason(chapter)
+        reason = service_reason(chapter, book["title"])
         if reason:
             print(f"\n[{number}/{len(indexes)}] глава {chapter_idx}: пропускаю, {reason}", flush=True)
             continue

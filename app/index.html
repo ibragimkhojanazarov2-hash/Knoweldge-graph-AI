@@ -998,8 +998,9 @@
     .book-head .cover { width: 170px; flex: none; }
     .book-info h1 { font-size: 30px; }
   }
-  /* Планшет: «Поиск» — иконка, «О проекте» уходит в подвал, меню компактнее. */
-  @media (max-width: 900px) {
+  /* Планшет, в том числе iPad горизонтально: «Поиск» — иконка,
+     «О проекте» уходит в подвал, меню компактнее. */
+  @media (max-width: 1200px) {
     .top { gap: 12px; padding: 12px 20px; }
     .top-actions { gap: 6px; }
     .nav-link { padding: 6px 10px; font-size: 13px; }
@@ -1014,8 +1015,8 @@
   }
   /* Шесть пунктов меню на телефоне в одну строку не влезают — пусть переносятся. */
   @media (max-width: 480px) {
-    .brand { display: none; }
-    .top { padding: 10px 12px; }
+    /* Логотип остаётся и на телефоне; справа от него — кнопка темы. */
+    .brand { font-size: 16px; letter-spacing: .03em; }
     .top-actions {
       flex: 1; min-width: 0; flex-wrap: wrap;
       justify-content: flex-end; gap: 4px;
@@ -1027,7 +1028,8 @@
   @media (max-width: 700px) {
     /* backdrop-filter у шапки делал её «рамкой» для position: fixed —
        нижняя панель прилипала к шапке, а не к низу экрана. */
-    .top { padding: 10px 14px; backdrop-filter: none; -webkit-backdrop-filter: none; }
+    /* Справа вверху — кнопка темы, поэтому логотип не заезжает под неё. */
+    .top { padding: 10px 58px 10px 14px; backdrop-filter: none; -webkit-backdrop-filter: none; }
     .top-actions {
       position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
       margin: 0; padding: 7px 4px calc(7px + env(safe-area-inset-bottom));
@@ -1047,6 +1049,9 @@
     .top-actions .nav-link:hover,
     .top-actions .nav-link.active { background: var(--surface); border: none; }
     .top-actions .nav-link::before { font-size: 19px; line-height: 1; }
+    /* Поиск — такая же вкладка, как остальные: значок и подпись. */
+    #searchBtn { width: auto; height: auto; padding: 5px 2px; font-size: 10px; }
+    #searchBtn::before { font-size: 19px; }
     /* Тема переезжает в правый верхний угол: в нижней панели тесно. */
     .top-actions .icon-btn {
       position: fixed; top: 10px; right: 14px; z-index: 31;
@@ -1064,7 +1069,7 @@
     #debateLink::before { content: "⚖"; }
     #askLink::before { content: "?"; }
     #reviewLink::before { content: "↻"; }
-    #searchBtn::before { content: "⌕"; }
+    #searchBtn::before { content: "🔍"; }
     /* В нижнюю панель «О проекте» не влезает: ссылка есть на экране библиотеки. */
     #aboutLink { display: none; }
     .about-flow { flex-direction: column; align-items: stretch; }

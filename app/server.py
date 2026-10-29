@@ -544,12 +544,15 @@ def get_search(query: str) -> dict:
         score = _best_score(needle, row["idea"], row["quote"], row["title"])
         if score is None:
             continue
-        ideas.append((score, row["id"], {
+        # Слово в заголовке или цитате — важнее, чем только в пересказе идеи.
+        strong = _best_score(needle, row["quote"], row["title"],
+                             row["chapter_title"] or "") is not None
+        ideas.append((0 if strong else 1, score, row["id"], {
             "id": row["id"], "idea": row["idea"], "quote": row["quote"],
             "book_title": row["book_title"], "chapter": row["chapter"],
             "chapter_title": row["chapter_title"] or "",
         }))
-    ideas.sort(key=lambda item: (item[0], item[1]))
+    ideas.sort(key=lambda item: (item[0], item[1], item[2]))
 
     books = []
     for row in book_rows:
@@ -566,16 +569,17 @@ def get_search(query: str) -> dict:
         score = _best_score(needle, row["text"], row["idea"], row["quote"])
         if score is None:
             continue
-        notes.append((score, -row["id"], {
+        strong = _best_score(needle, row["quote"]) is not None
+        notes.append((0 if strong else 1, score, -row["id"], {
             "id": row["id"], "text": row["text"], "idea_id": row["idea_id"],
             "idea": row["idea"], "book_title": row["book_title"],
             "created": row["created"],
         }))
     notes.sort(key=lambda item: (item[0], item[1]))
 
-    result["ideas"] = [item[2] for item in ideas[:SEARCH_LIMIT]]
-    result["books"] = [item[2] for item in books[:SEARCH_LIMIT]]
-    result["notes"] = [item[2] for item in notes[:SEARCH_LIMIT]]
+    result["ideas"] = [item[-1] for item in ideas[:SEARCH_LIMIT]]
+    result["books"] = [item[-1] for item in books[:SEARCH_LIMIT]]
+    result["notes"] = [item[-1] for item in notes[:SEARCH_LIMIT]]
     result["counts"] = {"ideas": len(ideas), "books": len(books), "notes": len(notes)}
     result["total"] = len(ideas) + len(books) + len(notes)
     return result
