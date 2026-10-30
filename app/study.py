@@ -1,8 +1,15 @@
-"""Замер извлечения идей: сколько идей предлагает модель и сколько цитат находится.
+"""Замер извлечения идей и слепая проверка цитат.
 
-Скрипт проходит по выбранным главам, режет их на куски так же, как extract.py,
-и для каждого куска зовёт модель с тем же PROMPT. Каждую предложенную цитату
-проверяет та же find_quote: цитата ищется в полном тексте главы.
+Режимы:
+  python3 app/study.py        — замер: results/extract-log.txt и results/table1.csv;
+  python3 app/study.py blind  — слепой лист results/blind-sheet.csv, ключ
+                                results/blind-key.csv и results/faithfulness.csv;
+  python3 app/study.py score  — precision по источникам после разметки → results/table2.csv.
+
+В замере скрипт проходит по выбранным главам, режет их на куски так же, как
+extract.py, и для каждого куска зовёт модель с тем же PROMPT. Каждую
+предложенную цитату проверяет та же find_quote: цитата ищется в полном тексте
+главы.
 
 Итог по куску:
 - proposed — сколько идей вернула модель;
@@ -12,13 +19,19 @@
 
 proposed = exact + near + dropped. В базу скрипт ничего не пишет.
 
-Запуск: python3 app/study.py
-Пишет results/extract-log.txt (подробный ход) и results/table1.csv (таблица).
+Слепой лист: в каждой главе поровну цитат идей, первых предложений главы
+и случайных предложений (seed=42), вперемешку. Источника в листе нет — он
+в blind-key.csv; колонку main_idea заполняет читатель, скрипт её не трогает.
+score считает precision как «main_idea = yes» / «размечено» по каждому источнику.
+
 Базу можно подменить переменной окружения MARGINALIA_DB.
 """
 from __future__ import annotations
 
 import csv
+import random
+import re
+import sys
 import time
 from datetime import datetime
 from pathlib import Path
@@ -31,6 +44,28 @@ BASE = Path(__file__).resolve().parent.parent
 RESULTS = BASE / "results"
 LOG = RESULTS / "extract-log.txt"
 TABLE = RESULTS / "table1.csv"
+BLIND_SHEET = RESULTS / "blind-sheet.csv"
+BLIND_KEY = RESULTS / "blind-key.csv"
+TABLE2 = RESULTS / "table2.csv"
+FAITHFUL = RESULTS / "faithfulness.csv"
+
+SEED = 42  # зерно для случайных предложений и перемешивания
+MAX_PER_SOURCE = 10  # не больше стольких цитат каждого источника на главу
+SENTENCE_MIN = 60  # короче — обрывок, а не предложение
+SENTENCE_MAX = 400  # длиннее — скорее абзац
+
+SOURCE_IDEA = "цитата идеи"
+SOURCE_FIRST = "первое предложение"
+SOURCE_RANDOM = "случайное предложение"
+SOURCES = (SOURCE_IDEA, SOURCE_FIRST, SOURCE_RANDOM)
+
+SHEET_HEADER = ("id", "глава", "предложение", "main_idea")
+KEY_HEADER = ("id", "книга", "глава", "источник")
+FAITH_HEADER = ("книга", "глава", "идея", "цитата", "same")
+TABLE2_HEADER = ("источник", "всего", "размечено", "main_idea_да", "precision")
+
+YES = {"yes", "y", "да", "1", "true", "+", "верно"}
+NO = {"no", "n", "нет", "0", "false", "-", "неверно"}
 
 # Что разбираем: название книги в базе → номера глав.
 PLAN = (
@@ -47,10 +82,11 @@ _log = None  # открытый файл журнала
 
 
 def say(text: str = "") -> None:
-    """Печатает строку в терминал и сразу пишет её в журнал."""
+    """Печатает строку в терминал и сразу пишет её в журнал, если он открыт."""
     print(text, flush=True)
-    _log.write(text + "\n")
-    _log.flush()
+    if _log is not None:
+        _log.write(text + "\n")
+        _log.flush()
 
 
 def num(value: int) -> str:
@@ -158,7 +194,258 @@ def count_chars(title: str) -> None:
     say(f"  без первой и последней служебных глав: {num(total - service)} знаков")
 
 
-def main() -> None:
+def norm(text: str) -> str:
+    """Текст в одну строку: все пробелы и переносы схлопнуты в один пробел."""
+    return " ".join((text or "").replace("\u00a0", " ").split())
+
+
+def split_sentences(text: str) -> list[str]:
+    """Предложения главы подходящей длины, без склейки соседних абзацев.
+
+    Абзацы режутся по знаку конца предложения; кусок, который начинается
+    со строчной буквы, приклеивается к предыдущему (так бывает после
+    сокращения или кавычки). Слишком короткие и слишком длинные куски
+    в лист не попадают: по ним нельзя судить о главной мысли.
+    """
+    sentences: list[str] = []
+    for paragraph in re.split(r"\n+", text):
+        paragraph = norm(paragraph)
+        if not paragraph:
+            continue
+        merged: list[str] = []
+        for part in re.split(r"(?<=[.!?…])\s+", paragraph):
+            part = part.strip()
+            if not part:
+                continue
+            if merged and part[0].islower():
+                merged[-1] += " " + part
+            else:
+                merged.append(part)
+        sentences.extend(merged)
+    return [s for s in sentences if SENTENCE_MIN <= len(s) <= SENTENCE_MAX]
+
+
+def unique_texts(texts: list[str]) -> list[str]:
+    """Убирает повторы, сохраняя порядок."""
+    seen, result = set(), []
+    for text in texts:
+        if text not in seen:
+            seen.add(text)
+            result.append(text)
+    return result
+
+
+def write_csv(path: Path, header: tuple[str, ...], rows: list[list]) -> None:
+    with path.open("w", encoding="utf-8", newline="") as file:
+        writer = csv.writer(file)
+        writer.writerow(header)
+        writer.writerows(rows)
+
+
+def read_csv_rows(path: Path) -> list[dict]:
+    """Читает CSV так, как его мог сохранить Excel: UTF-8, UTF-16 или cp1251."""
+    rows = None
+    for encoding in ("utf-8-sig", "utf-16", "cp1251"):
+        try:
+            with path.open(encoding=encoding, newline="") as file:
+                rows = list(csv.DictReader(file))
+            break
+        except (UnicodeError, csv.Error):
+            continue
+    if rows is None:
+        raise SystemExit(f"Не удалось прочитать {path.name}: неизвестная кодировка.")
+    return [
+        {(key or "").strip().lower(): (value or "").strip() for key, value in row.items()}
+        for row in rows
+    ]
+
+
+def sheet_is_annotated(path: Path) -> bool:
+    """Есть ли в листе хоть одна отметка в main_idea."""
+    if not path.exists():
+        return False
+    return any(row.get("main_idea") for row in read_csv_rows(path))
+
+
+def load_ideas(book_id: str, chapter: int) -> list[dict]:
+    """Идеи главы из базы: id, текст идеи и настоящая цитата."""
+    with connect() as db:
+        rows = db.execute(
+            "SELECT id, idea, quote FROM ideas WHERE book_id = ? AND chapter = ? ORDER BY id",
+            (book_id, chapter),
+        ).fetchall()
+    return [
+        {"id": row["id"], "idea": norm(row["idea"]), "quote": norm(row["quote"])}
+        for row in rows
+        if norm(row["quote"])
+    ]
+
+
+def blind() -> None:
+    """Слепой лист и ключ к нему для глав из PLAN.
+
+    В каждой главе одинаковое число цитат идей, первых предложений главы
+    и случайных предложений; строки перемешаны (seed=42). В листе нет
+    источника, а main_idea оставлен пустым: его заполняет читатель.
+    """
+    RESULTS.mkdir(parents=True, exist_ok=True)
+    if sheet_is_annotated(BLIND_SHEET):
+        raise SystemExit(
+            f"{BLIND_SHEET.name} уже размечен — не перезаписываю. "
+            "Уберите отметки или переименуйте файл, если нужен новый лист."
+        )
+
+    rng = random.Random(SEED)
+    sheet, key, faithful = [], [], []
+    next_id = 1
+    say(f"Слепой лист: seed={SEED}, не больше {MAX_PER_SOURCE} строк "
+        f"каждого источника на главу")
+
+    for title, indexes in PLAN:
+        book_id = find_book(title)
+        for idx in indexes:
+            chapter = get_chapter(book_id, idx)
+            if chapter is None:
+                raise SystemExit(f"Глава {idx} книги «{title}» не найдена в базе.")
+            chapter_label = f"{idx}. {chapter['title']}"
+            sheet_label = f"{title}, глава {chapter_label}"
+
+            ideas = load_ideas(book_id, idx)
+            for idea in ideas:  # все идеи главы — для faithfulness.csv
+                faithful.append([title, chapter_label, idea["idea"], idea["quote"], ""])
+
+            chosen_ideas, seen = [], set()
+            for idea in ideas:  # одна и та же цитата дважды в лист не попадает
+                if idea["quote"] not in seen:
+                    seen.add(idea["quote"])
+                    chosen_ideas.append(idea)
+
+            sentences = unique_texts(split_sentences(chapter["text"]))
+            count = min(len(chosen_ideas), MAX_PER_SOURCE, len(sentences) // 2)
+            while count > 0:
+                chosen = rng.sample(chosen_ideas, count)
+                used = {idea["quote"] for idea in chosen}
+                pool = [s for s in sentences if s not in used]
+                if len(pool) >= 2 * count:
+                    break
+                count -= 1
+            if count == 0:
+                say(f"  глава {chapter_label}: мало данных "
+                    f"(идей {len(chosen_ideas)}, предложений {len(sentences)}), пропускаю")
+                continue
+
+            items = [(SOURCE_IDEA, idea["quote"]) for idea in chosen]
+            items += [(SOURCE_FIRST, s) for s in pool[:count]]
+            items += [(SOURCE_RANDOM, s) for s in rng.sample(pool[count:], count)]
+            rng.shuffle(items)
+            for source, text in items:
+                sheet.append([next_id, sheet_label, text, ""])
+                key.append([next_id, title, chapter_label, source])
+                next_id += 1
+            say(f"  глава {chapter_label}: идей {len(ideas)}, строк на источник {count}, "
+                f"предложений для сравнения {len(sentences)}")
+
+    if not sheet:
+        raise SystemExit("Нечего размечать: в главах нет идей или предложений.")
+
+    write_csv(BLIND_SHEET, SHEET_HEADER, sheet)
+    write_csv(BLIND_KEY, KEY_HEADER, key)
+    write_csv(FAITHFUL, FAITH_HEADER, faithful)
+
+    say(f"\nЛист: {BLIND_SHEET.relative_to(BASE)} — {len(sheet)} строк, main_idea пустой")
+    for source in SOURCES:
+        say(f"  {source}: {sum(1 for row in key if row[3] == source)}")
+    say(f"Ключ: {BLIND_KEY.relative_to(BASE)} — при разметке его не открывать")
+    say(f"Проверка цитат: {FAITHFUL.relative_to(BASE)} — {len(faithful)} идей, same пустой")
+    say("\nДальше: заполните main_idea (yes/no) в листе и same (yes/no) в faithfulness.csv, "
+        "затем: python3 app/study.py score")
+
+
+def score() -> None:
+    """Precision по источникам после ручной разметки листа."""
+    for path in (BLIND_SHEET, BLIND_KEY):
+        if not path.exists():
+            raise SystemExit(f"Нет {path.name}. Сначала: python3 app/study.py blind")
+
+    source_by_id = {}
+    for row in read_csv_rows(BLIND_KEY):
+        item_id = row.get("id", "")
+        if item_id:
+            source_by_id[item_id] = row.get("источник", "")
+
+    total: dict[str, int] = {}
+    marked: dict[str, int] = {}
+    yes: dict[str, int] = {}
+    sheet_ids, blank, bad_marks, unknown = set(), 0, [], []
+
+    for row in read_csv_rows(BLIND_SHEET):
+        item_id = row.get("id", "")
+        sheet_ids.add(item_id)
+        source = source_by_id.get(item_id)
+        if source is None:
+            unknown.append(item_id)
+            continue
+        total[source] = total.get(source, 0) + 1
+        value = row.get("main_idea", "").strip().lower()
+        if not value:
+            blank += 1
+        elif value in YES:
+            marked[source] = marked.get(source, 0) + 1
+            yes[source] = yes.get(source, 0) + 1
+        elif value in NO:
+            marked[source] = marked.get(source, 0) + 1
+        else:
+            bad_marks.append((item_id, value))
+
+    missing = [row.get("id", "") for row in read_csv_rows(BLIND_KEY)
+               if row.get("id", "") and row.get("id", "") not in sheet_ids]
+    marked_all = sum(marked.values())
+    if marked_all == 0:
+        raise SystemExit("В blind-sheet.csv нет ни одной понятной отметки main_idea "
+                         "(yes/no). Заполните колонку и запустите score снова.")
+
+    rows = []
+    for source in SOURCES:
+        total_n, marked_n, yes_n = total.get(source, 0), marked.get(source, 0), yes.get(source, 0)
+        rows.append([source, total_n, marked_n, yes_n,
+                     f"{yes_n / marked_n:.3f}" if marked_n else ""])
+    total_all = sum(total.get(s, 0) for s in SOURCES)
+    yes_all = sum(yes.get(s, 0) for s in SOURCES)
+    rows.append(["все источники", total_all, marked_all, yes_all,
+                 f"{yes_all / marked_all:.3f}"])
+    write_csv(TABLE2, TABLE2_HEADER, rows)
+
+    say(f"Размечено {marked_all} из {total_all}: пусто {blank}, "
+        f"непонятных отметок {len(bad_marks)}")
+    for source in SOURCES:
+        total_n, marked_n, yes_n = total.get(source, 0), marked.get(source, 0), yes.get(source, 0)
+        precision = f"{yes_n / marked_n:.1%}" if marked_n else "—"
+        say(f"  {source}: да {yes_n} из {marked_n} (precision {precision}), всего {total_n}")
+    say(f"Все источники: precision {yes_all / marked_all:.1%}")
+    say(f"Таблица: {TABLE2.relative_to(BASE) if TABLE2.is_relative_to(BASE) else TABLE2}")
+
+    problems = False
+    if blank:
+        say(f"Не размечено строк: {blank} — они не вошли в precision.")
+        problems = True
+    if bad_marks:
+        say("Непонятные отметки (нужно yes или no): "
+            + ", ".join(f"id {i}: «{v}»" for i, v in bad_marks[:10])
+            + (" …" if len(bad_marks) > 10 else ""))
+        problems = True
+    if unknown:
+        say("Строки листа без id в ключе: " + ", ".join(unknown[:10])
+            + (" …" if len(unknown) > 10 else ""))
+        problems = True
+    if missing:
+        say("Строки ключа, которых нет в листе: " + ", ".join(missing[:10])
+            + (" …" if len(missing) > 10 else ""))
+        problems = True
+    if problems:
+        raise SystemExit(3)
+
+
+def run_study() -> None:
     RESULTS.mkdir(parents=True, exist_ok=True)
     global _log
     _log = LOG.open("w", encoding="utf-8")
@@ -223,6 +510,18 @@ def main() -> None:
     if errors:
         print(f"Результаты неполные: ошибок {errors}, подробности в {LOG}.")
         raise SystemExit(3)
+
+
+def main() -> None:
+    mode = sys.argv[1].lower() if len(sys.argv) > 1 else "study"
+    if len(sys.argv) > 2 or mode not in ("study", "blind", "score"):
+        raise SystemExit("Запуск: python3 app/study.py [blind|score]")
+    if mode == "blind":
+        blind()
+    elif mode == "score":
+        score()
+    else:
+        run_study()
 
 
 if __name__ == "__main__":
