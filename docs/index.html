@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Marginalia — FRP 2026</title>
+<meta name="description" content="An AI map of ideas from your books, where every idea carries a real quote.">
+<style>
+  :root { --accent: #A3283D; --ink: #222; --muted: #666; --line: #e6e1df; --soft: #faf7f5; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 17px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: var(--ink); background: #fff; }
+  main { max-width: 860px; margin: 0 auto; padding: 40px 20px 60px; }
+  header { text-align: center; }
+  h1 { font-size: clamp(28px, 5vw, 42px); line-height: 1.15; margin: 0 0 12px; }
+  .authors { font-size: 19px; } .aff { color: var(--muted); margin-top: 4px; }
+  .links { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin: 22px 0 8px; }
+  .links a { background: var(--ink); color: #fff; text-decoration: none; padding: 8px 18px; border-radius: 999px; font-weight: 600; font-size: 15px; }
+  .links a.soon { background: #bbb; pointer-events: none; }
+  figure { margin: 28px 0; } figure img { width: 100%; border-radius: 10px; border: 1px solid var(--line); }
+  figcaption { color: var(--muted); font-size: 15px; text-align: center; margin-top: 6px; }
+  h2 { font-size: 26px; margin: 44px 0 10px; text-align: center; }
+  .tldr { background: var(--soft); border-left: 5px solid var(--accent); padding: 14px 18px; border-radius: 0 8px 8px 0; }
+  .steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 18px 0; }
+  .steps div { border: 2px solid var(--accent); border-radius: 10px; padding: 12px; text-align: center; font-size: 15px; }
+  .steps b { display: block; color: var(--accent); }
+  table { width: 100%; border-collapse: collapse; font-size: 16px; margin: 14px 0; }
+  th, td { padding: 9px 10px; border-bottom: 1px solid var(--line); text-align: center; }
+  th { border-bottom: 2px solid var(--ink); } td:first-child, th:first-child { text-align: left; }
+  tr.best td { font-weight: 700; background: #fdf1f3; }
+  .table-wrap { overflow-x: auto; }
+  .gal { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
+  .gal figure { margin: 0; } code { background: var(--soft); padding: 1px 5px; border-radius: 4px; }
+  pre { background: var(--soft); padding: 14px; border-radius: 8px; overflow-x: auto; font-size: 14px; }
+  footer { color: var(--muted); font-size: 14px; text-align: center; margin-top: 50px; border-top: 1px solid var(--line); padding-top: 16px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Marginalia: a map of ideas from your books</h1>
+    <div class="authors">An FRP 2026 student project</div>
+    <div class="aff">FRP 2026, AI Engineering track · ISSAI, Nazarbayev University</div>
+    <div class="links">
+      <a href="https://github.com/ibragimkhojanazarov2-hash/Knoweldge-graph-AI">💻 Code</a>
+      <a href="#run">▶ Run it</a>
+    </div>
+  </header>
+
+  <figure>
+    <img src="map.png" alt="The map of ideas: books in columns, links as arcs">
+    <figcaption>The map: all ideas of the books in columns, links between them as arcs.</figcaption>
+  </figure>
+
+  <p class="tldr"><b>In one sentence:</b> Marginalia reads your books, splits them into ideas, and links ideas across books; every idea must carry a real quote, checked against the book, so the map has no invented thoughts.</p>
+
+  <h2>The problem</h2>
+  <p>A normal e-reader keeps pages, and notes keep your thoughts, but neither sees the links between books. Marginalia answers the question “what does this book say about the same thing I read last month?”. An AI that summarises books can invent ideas, so here each idea is a short thought plus a quote, and an idea without a matching quote is thrown away.</p>
+
+  <h2>How it works</h2>
+  <div class="steps">
+    <div><b>1. A book</b>EPUB or TXT, up to 100 MB</div>
+    <div><b>2. Ideas + links</b>the AI finds ideas; Python checks every quote</div>
+    <div><b>3. The map</b>bridges, debates, questions, review cards</div>
+  </div>
+  <p>The class AI model (DeepSeek-V4.1-Flash, on the ISSAI server) proposes the ideas of each chapter, short titles, the type of each link (supports, contradicts, extends, example of, same idea) with a confidence, the key ideas and a summary. Everything else is plain Python: reading the EPUB, finding link candidates by shared words, search, the map and the review cards. Books, ideas and links stay in one local SQLite file; the page is one HTML file with no external libraries.</p>
+
+  <h2>Results</h2>
+  <p>Are the quotes real? For 6 chapters of two books, every quote the model proposed was compared with the book text letter by letter.</p>
+  <div class="table-wrap"><table>
+    <tr><th>Ideas proposed by the model</th><th>Quote exact</th><th>Quote near (≥ 90%)</th><th>Dropped</th></tr>
+    <tr class="best"><td>69 (6 chapters, 2 books)</td><td>67</td><td>1</td><td>1</td></tr>
+  </table></div>
+  <p>67 of 69 quotes were exact copies of the book, and the one invented quote was dropped before it reached the map. The quote check does not check the <i>type</i> of a link; a hand check of the links is the next step. The demo library has 3 books, 381 ideas and 123 links.</p>
+
+
+  <h2>Screens</h2>
+  <div class="gal">
+    <figure><img src="library.png" alt="Library with the link of the day"><figcaption>Library: one link of the day between two books.</figcaption></figure>
+    <figure><img src="bridges.png" alt="Bridges between books"><figcaption>Bridges: the strongest links between books, with confidence and a reason.</figcaption></figure>
+    <figure><img src="debate.png" alt="Two books side by side"><figcaption>Debate: where two authors agree, where they disagree.</figcaption></figure>
+    <figure><img src="ask.png" alt="Ask the library"><figcaption>Ask the library: an answer with footnotes to real quotes.</figcaption></figure>
+    <figure><img src="book.png" alt="Book page"><figcaption>Book page: key ideas and a summary.</figcaption></figure>
+    <figure><img src="review.png" alt="Review cards"><figcaption>Review: 5–10 cards a day from key ideas and links.</figcaption></figure>
+  </div>
+
+  <h2 id="run">Run it yourself</h2>
+  <p>You need only Python 3.10 or newer: no packages, no build.</p>
+<pre>git clone https://github.com/ibragimkhojanazarov2-hash/Knoweldge-graph-AI.git
+cd Knoweldge-graph-AI
+python3 app/server.py 8000 --db demo/library-demo.db</pre>
+  <p>Then open <code>http://localhost:8000</code>. Library, map, bridges, search and review work offline; “Ask” needs an AI model.</p>
+
+  <h2>Limitations and ethics</h2>
+  <p>The quote check covers 6 chapters only. Link candidates are found by shared words, so a link without shared words can be missed. Only EPUB and TXT, one user, one local database. Books are not in this repository; the demo library keeps only the first paragraphs of each chapter.</p>
+
+  <h2>Cite</h2>
+<pre>@misc{marginalia2026,
+  title  = {Marginalia: a map of ideas from your books},
+  author = {FRP 2026 student},
+  note   = {FRP 2026, ISSAI, Nazarbayev University},
+  year   = {2026}
+}</pre>
+
+  <footer>Made at the ISSAI Fall Research Program 2026 · Page template: FRP AI Engineering</footer>
+</main>
+</body>
+</html>
